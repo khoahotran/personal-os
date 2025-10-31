@@ -1,0 +1,47 @@
+# ========================
+# Go specific
+# ========================
+
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Dependency directories (remove the comment below if you use vendoring)
+vendor/
+
+# ========================
+# IDEs and editors
+# ========================
+.vscode/
+.idea/
+*.iml
+*.swp
+*~
+
+# ========================
+# Docker
+# ========================
+# Ignore Docker container and image build cache
+docker-compose.override.yml
+*.log
+*.pid
+
+# Ignore some files
+tmp/
+build/
+.env
+.env.local
+.env.*.local
+
+# ========================
+# OS generated
+# ========================
+.DS_Store
+Thumbs.db

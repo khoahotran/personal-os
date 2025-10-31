@@ -1,0 +1,17 @@
+app:
+  port: "8080"
+
+db:
+  dsn: "postgres://user:pass@localhost:5432/db?sslmode=disable"
+
+redis:
+  addr: "localhost:6379"
+  password: ""
+
+kafka:
+  brokers:
+    - "localhost:9093"
+
+auth:
+  jwt_secret: "default_secret"
+  token_lifespan: "1h"

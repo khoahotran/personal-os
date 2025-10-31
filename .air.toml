@@ -1,0 +1,28 @@
+root = "."
+
+tmp_dir = "tmp"
+
+[build]
+
+cmd = "go run ./cmd/server/main.go"
+
+bin = "tmp/main"
+
+include_dir = ["cmd", "internal", "adapters", "pkg"]
+
+include_ext = ["go", "yaml", "sql"]
+
+exclude_dir = ["tmp", "vendor", "frontend", "deploy", "migrations"]
+
+kill_delay = "500ms"
+
+[log]
+
+time = true
+
+[color]
+
+build = "yellow"
+main = "magenta"
+runner = "green"
+watcher = "cyan"

@@ -1,0 +1,14 @@
+DROP TRIGGER IF EXISTS update_hobby_items_updated_at ON hobby_items;
+DROP TRIGGER IF EXISTS update_posts_updated_at ON posts;
+DROP TRIGGER IF EXISTS update_projects_updated_at ON projects;
+DROP TRIGGER IF EXISTS update_profiles_updated_at ON profiles;
+DROP TABLE IF EXISTS tag_relations;
+DROP TABLE IF EXISTS tags;
+DROP TABLE IF EXISTS hobby_items;
+DROP TABLE IF EXISTS media;
+DROP TABLE IF EXISTS post_versions;
+DROP TABLE IF EXISTS posts;
+DROP TABLE IF EXISTS projects;
+DROP TABLE IF EXISTS profiles;
+DROP TABLE IF EXISTS users;
+DROP FUNCTION IF EXISTS update_updated_at_column();
