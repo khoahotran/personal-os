@@ -2,10 +2,11 @@ package http
 
 import (
 	"time"
-	"github.com/khoahotran/personal-os/internal/domain/profile"
-)
 
-// --- Profile DTOs ---
+	"github.com/khoahotran/personal-os/internal/domain/post"
+	"github.com/khoahotran/personal-os/internal/domain/profile"
+	"github.com/khoahotran/personal-os/internal/domain/tag"
+)
 
 type CareerMilestoneDTO struct {
 	Date        time.Time `json:"date"`
@@ -28,8 +29,6 @@ type UpdateProfileRequest struct {
 		Description string    `json:"description"`
 	} `json:"career_timeline"`
 }
-
-// --- Helper Converters ---
 
 func ToProfileDTO(p *profile.Profile) ProfileDTO {
 	dto := ProfileDTO{
@@ -58,4 +57,80 @@ func (req *UpdateProfileRequest) ToDomainMilestones() []profile.CareerMilestone 
 		}
 	}
 	return domainMilestones
+}
+
+type CreatePostRequest struct {
+	Title   string   `json:"title" binding:"required"`
+	Content string   `json:"content"`
+	Slug    string   `json:"slug"`
+	Status  string   `json:"status" binding:"required,oneof=draft private public"`
+	Tags    []string `json:"tags"`
+}
+
+type PostDTO struct {
+	ID              string     `json:"id"`
+	Slug            string     `json:"slug"`
+	Title           string     `json:"title"`
+	ContentMarkdown string     `json:"content_markdown"`
+	Status          string     `json:"status"`
+	OgImageURL      *string    `json:"og_image_url"`
+	PublishedAt     *time.Time `json:"published_at"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+	Tags            []string   `json:"tags"`
+}
+
+func (r *CreatePostRequest) ToDomainPostStatus() post.PostStatus {
+	switch r.Status {
+	case "public":
+		return post.StatusPublic
+	case "private":
+		return post.StatusPrivate
+	default:
+		return post.StatusDraft
+	}
+}
+
+type PostSummaryDTO struct {
+	ID          string     `json:"id"`
+	Slug        string     `json:"slug"`
+	Title       string     `json:"title"`
+	Status      string     `json:"status"`
+	OgImageURL  *string    `json:"og_image_url,omitempty"`
+	PublishedAt *time.Time `json:"published_at,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
+}
+
+func ToPostSummaryDTO(p *post.Post) PostSummaryDTO {
+	return PostSummaryDTO{
+		ID:          p.ID.String(),
+		Slug:        p.Slug,
+		Title:       p.Title,
+		Status:      string(p.Status),
+		OgImageURL:  p.OgImageURL,
+		PublishedAt: p.PublishedAt,
+		CreatedAt:   p.CreatedAt,
+		UpdatedAt:   p.UpdatedAt,
+	}
+}
+
+func ToPostDTO(p *post.Post, tags []tag.Tag) PostDTO {
+	tagNames := make([]string, len(tags))
+	for i, t := range tags {
+		tagNames[i] = t.Name
+	}
+
+	return PostDTO{
+		ID:              p.ID.String(),
+		Slug:            p.Slug,
+		Title:           p.Title,
+		ContentMarkdown: p.ContentMarkdown,
+		Status:          string(p.Status),
+		OgImageURL:      p.OgImageURL,
+		PublishedAt:     p.PublishedAt,
+		CreatedAt:       p.CreatedAt,
+		UpdatedAt:       p.UpdatedAt,
+		Tags:            tagNames,
+	}
 }

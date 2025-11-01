@@ -1,7 +1,12 @@
 package event
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
+	"log"
+
+	"github.com/google/uuid"
 	"github.com/khoahotran/personal-os/internal/config"
 	"github.com/segmentio/kafka-go"
 )
@@ -9,8 +14,23 @@ import (
 const (
 	TopicPostEvents  = "post.events"
 	TopicMediaEvents = "media.events"
-	TopicViewEvents  = "view.events"	
+	TopicViewEvents  = "view.events"
 )
+
+type PostEventType string
+
+const (
+	PostEventTypeCreated   PostEventType = "post.created"
+	PostEventTypeUpdated   PostEventType = "post.updated"
+	PostEventTypeDeleted   PostEventType = "post.deleted"
+	PostEventTypePublished PostEventType = "post.published"
+)
+
+type PostEventPayload struct {
+	EventType PostEventType `json:"event_type"`
+	PostID    uuid.UUID     `json:"post_id"`
+	OwnerID   uuid.UUID     `json:"owner_id"`
+}
 
 type KafkaProducerClient struct {
 	PostEventsWriter  *kafka.Writer
@@ -24,34 +44,43 @@ func NewKafkaProducerClient(cfg config.Config) (*KafkaProducerClient, error) {
 		return nil, fmt.Errorf("config Kafka brokers not found")
 	}
 
-	// writer 'post.events'
-	postWriter := &kafka.Writer{
-		Addr:     kafka.TCP(brokers...),
-		Topic:    TopicPostEvents,
-		Balancer: &kafka.LeastBytes{},
+	createWriter := func(topic string) *kafka.Writer {
+		return &kafka.Writer{
+			Addr:     kafka.TCP(brokers...),
+			Topic:    topic,
+			Balancer: &kafka.LeastBytes{},
+			Async:    true,
+		}
 	}
 
-	// writer 'media.events'
-	mediaWriter := &kafka.Writer{
-		Addr:     kafka.TCP(brokers...),
-		Topic:    TopicMediaEvents,
-		Balancer: &kafka.LeastBytes{},
+	client := &KafkaProducerClient{
+		PostEventsWriter:  createWriter(TopicPostEvents),
+		MediaEventsWriter: createWriter(TopicMediaEvents),
+		ViewEventsWriter:  createWriter(TopicViewEvents),
 	}
 
-	// writer 'view.events'
-	viewWriter := &kafka.Writer{
-		Addr:     kafka.TCP(brokers...),
-		Topic:    TopicViewEvents,
-		Balancer: &kafka.LeastBytes{},
+	log.Println("Init Kafka Producers (Writers) successfully.")
+	return client, nil
+}
+
+func (c *KafkaProducerClient) PublishPostEvent(ctx context.Context, payload PostEventPayload) error {
+	msgBody, err := json.Marshal(payload)
+	if err != nil {
+		log.Printf("Kafka Marshal failed: %v", err)
+		return err
 	}
 
-	fmt.Println("Initialize Kafka Producers successfully.")
+	err = c.PostEventsWriter.WriteMessages(ctx, kafka.Message{
+		Key:   []byte(payload.PostID.String()),
+		Value: msgBody,
+	})
 
-	return &KafkaProducerClient{
-		PostEventsWriter:  postWriter,
-		MediaEventsWriter: mediaWriter,
-		ViewEventsWriter:  viewWriter,
-	}, nil
+	if err != nil {
+		log.Printf("Kafka Write failed: %v", err)
+	} else {
+		log.Printf("Sent event to Kafka: %s for PostID: %s", payload.EventType, payload.PostID)
+	}
+	return err
 }
 
 func (c *KafkaProducerClient) Close() {

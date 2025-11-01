@@ -27,6 +27,11 @@ type Config struct {
 		JWTSecret     string        `mapstructure:"jwt_secret"`
 		TokenLifespan time.Duration `mapstructure:"token_lifespan"`
 	} `mapstructure:"auth"`
+	Cloudinary struct {
+		CloudName string `mapstructure:"cloud_name"`
+		ApiKey    string `mapstructure:"api_key"`
+		ApiSecret string `mapstructure:"api_secret"`
+	} `mapstructure:"cloudinary"`
 }
 
 func LoadConfig() (cfg Config, err error) {
@@ -53,6 +58,10 @@ func LoadConfig() (cfg Config, err error) {
 	viper.BindEnv("kafka.brokers", "KAFKA_BROKERS")
 	viper.BindEnv("auth.jwt_secret", "JWT_SECRET")
 	viper.BindEnv("auth.token_lifespan", "TOKEN_LIFESPAN")
+
+	viper.BindEnv("cloudinary.cloud_name", "CLOUDINARY_CLOUD_NAME")
+	viper.BindEnv("cloudinary.api_key", "CLOUDINARY_API_KEY")
+	viper.BindEnv("cloudinary.api_secret", "CLOUDINARY_API_SECRET")
 
 	err = viper.Unmarshal(&cfg)
 	return

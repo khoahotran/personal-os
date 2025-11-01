@@ -51,13 +51,18 @@ CREATE TABLE IF NOT EXISTS posts (
     content_markdown TEXT,
     status VARCHAR(20) NOT NULL DEFAULT 'draft',
     og_image_url VARCHAR(255),
+    thumbnail_url VARCHAR(255),
+    metadata JSONB DEFAULT '{}'::jsonb,
     version_history JSONB DEFAULT '[]',
     published_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT posts_status_check CHECK (status IN ('draft', 'private', 'public'))
+    CONSTRAINT posts_status_check CHECK (
+        status IN ('draft', 'private', 'public', 'pending')
+    )
 );
 CREATE INDEX IF NOT EXISTS idx_posts_owner_id_status ON posts(owner_id, status);
+CREATE INDEX IF NOT EXISTS idx_posts_metadata ON posts USING gin (metadata);
 CREATE INDEX IF NOT EXISTS idx_posts_slug ON posts(slug);
 DROP TRIGGER IF EXISTS update_posts_updated_at ON posts;
 CREATE TRIGGER update_posts_updated_at BEFORE
