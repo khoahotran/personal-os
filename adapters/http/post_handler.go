@@ -2,7 +2,6 @@ package http
 
 import (
 	"encoding/json"
-	"errors"
 	"net/http"
 	"strconv"
 
@@ -11,6 +10,8 @@ import (
 
 	postUC "github.com/khoahotran/personal-os/internal/application/usecase/post"
 	"github.com/khoahotran/personal-os/internal/domain/post"
+	"github.com/khoahotran/personal-os/pkg/apperror"
+	"github.com/khoahotran/personal-os/pkg/logger"
 )
 
 type PostHandler struct {
@@ -21,6 +22,7 @@ type PostHandler struct {
 	deletePostUseCase      *postUC.DeletePostUseCase
 	getPostUseCase         *postUC.GetPostUseCase
 	getPublicPostUseCase   *postUC.GetPublicPostUseCase
+	logger                 logger.Logger
 }
 
 func NewPostHandler(
@@ -31,6 +33,7 @@ func NewPostHandler(
 	deleteUC *postUC.DeletePostUseCase,
 	getUC *postUC.GetPostUseCase,
 	getPublicUC *postUC.GetPublicPostUseCase,
+	log logger.Logger,
 ) *PostHandler {
 	return &PostHandler{
 		createPostUseCase:      createUC,
@@ -40,6 +43,7 @@ func NewPostHandler(
 		deletePostUseCase:      deleteUC,
 		getPostUseCase:         getUC,
 		getPublicPostUseCase:   getPublicUC,
+		logger:                 log,
 	}
 }
 
@@ -47,44 +51,46 @@ func (h *PostHandler) CreatePost(c *gin.Context) {
 
 	ownerID, ok := GetOwnerIDFromGinContext(c)
 	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "owner information not found"})
+		c.Error(apperror.NewPermissionDenied("ownerID not found in context"))
 		return
 	}
 
 	fileHeader, err := c.FormFile("file")
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "'file' is required"})
+		c.Error(apperror.NewInvalidInput("'file' is required", err))
 		return
 	}
 
 	file, err := fileHeader.Open()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "file cannot open"})
+		c.Error(apperror.NewInternal("failed to open file", err))
 		return
 	}
 	defer file.Close()
 
-	title := c.PostForm("title")
-	content := c.PostForm("content")
-	slug := c.PostForm("slug")
-	status := c.PostForm("status") 
-	tagsJSON := c.PostForm("tags") 
-
-	if title == "" || status == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "'title' and 'status' is required"})
+	dataJSON := c.PostForm("data")
+	if dataJSON == "" {
+		c.Error(apperror.NewInvalidInput("'data' (JSON string) is required", nil))
+		return
+	}
+	var reqData struct {
+		Title   string   `json:"title"`
+		Content string   `json:"content"`
+		Slug    string   `json:"slug"`
+		Status  string   `json:"status"`
+		Tags    []string `json:"tags"`
+	}
+	if err := json.Unmarshal([]byte(dataJSON), &reqData); err != nil {
+		c.Error(apperror.NewInvalidInput("'data' field is not valid JSON", err))
+		return
+	}
+	if reqData.Title == "" || reqData.Status == "" {
+		c.Error(apperror.NewInvalidInput("'title' and 'status' are required in data", nil))
 		return
 	}
 
-	var tagNames []string
-	if tagsJSON != "" {
-		if err := json.Unmarshal([]byte(tagsJSON), &tagNames); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "'tags' field is invalid JSON array"})
-			return
-		}
-	}
-
 	var reqStatus post.PostStatus
-	switch status {
+	switch reqData.Status {
 	case "public":
 		reqStatus = post.StatusPublic
 	case "private":
@@ -95,11 +101,11 @@ func (h *PostHandler) CreatePost(c *gin.Context) {
 
 	input := postUC.CreatePostInput{
 		OwnerID:         ownerID,
-		Title:           title,
-		Content:         content,
-		Slug:            slug,
-		RequestedStatus: reqStatus, 
-		TagNames:        tagNames,
+		Title:           reqData.Title,
+		Content:         reqData.Content,
+		Slug:            reqData.Slug,
+		RequestedStatus: reqStatus,
+		TagNames:        reqData.Tags,
 		File:            file,
 		Metadata:        map[string]any{"original_filename": fileHeader.Filename, "requested_status": string(reqStatus)},
 	}
@@ -107,22 +113,18 @@ func (h *PostHandler) CreatePost(c *gin.Context) {
 	output, err := h.createPostUseCase.Execute(c.Request.Context(), input)
 	if err != nil {
 
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "create post failed", "details": err.Error()})
+		c.Error(err)
 		return
 	}
 
-	c.JSON(http.StatusCreated, gin.H{
-		"message": "created post successfully, processing ...",
-		"post_id": output.PostID,
-		"slug":    output.Slug,
-	})
+	c.JSON(http.StatusCreated, gin.H{"message": "created post successfully, processing ...", "post_id": output.PostID, "slug": output.Slug})
 }
 
 func (h *PostHandler) ListPosts(c *gin.Context) {
 
 	ownerID, ok := GetOwnerIDFromGinContext(c)
 	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "owner information not found"})
+		c.Error(apperror.NewPermissionDenied("ownerID not found in context"))
 		return
 	}
 
@@ -136,7 +138,7 @@ func (h *PostHandler) ListPosts(c *gin.Context) {
 	}
 	output, err := h.listPostsUseCase.Execute(c.Request.Context(), input)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "get post list failed"})
+		c.Error(err)
 		return
 	}
 
@@ -158,7 +160,7 @@ func (h *PostHandler) ListPublicPosts(c *gin.Context) {
 	}
 	output, err := h.listPublicPostsUseCase.Execute(c.Request.Context(), input)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "get public post list failed"})
+		c.Error(err)
 		return
 	}
 
@@ -173,19 +175,19 @@ func (h *PostHandler) UpdatePost(c *gin.Context) {
 
 	ownerID, ok := GetOwnerIDFromGinContext(c)
 	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "owner information not found"})
+		c.Error(apperror.NewPermissionDenied("ownerID not found in context"))
 		return
 	}
 
 	postID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid post ID"})
+		c.Error(apperror.NewInvalidInput("invalid post ID", err))
 		return
 	}
 
-	var req CreatePostRequest
+	var req UpdatePostRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request data", "details": err.Error()})
+		c.Error(apperror.NewInvalidInput("invalid request data", err))
 		return
 	}
 
@@ -201,11 +203,7 @@ func (h *PostHandler) UpdatePost(c *gin.Context) {
 
 	output, err := h.updatePostUseCase.Execute(c.Request.Context(), input)
 	if err != nil {
-		if errors.Is(err, errors.New("post not found")) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "post not found or no permission"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "update post failed", "details": err.Error()})
+		c.Error(err)
 		return
 	}
 
@@ -216,13 +214,13 @@ func (h *PostHandler) DeletePost(c *gin.Context) {
 
 	ownerID, ok := GetOwnerIDFromGinContext(c)
 	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "owner information not found"})
+		c.Error(apperror.NewPermissionDenied("ownerID not found in context"))
 		return
 	}
 
 	postID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid post ID"})
+		c.Error(apperror.NewInvalidInput("invalid post ID", err))
 		return
 	}
 
@@ -232,11 +230,7 @@ func (h *PostHandler) DeletePost(c *gin.Context) {
 	}
 
 	if err := h.deletePostUseCase.Execute(c.Request.Context(), input); err != nil {
-		if errors.Is(err, errors.New("post not found")) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "post not found or no permission"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "delete post failed", "details": err.Error()})
+		c.Error(err)
 		return
 	}
 
@@ -247,13 +241,13 @@ func (h *PostHandler) GetPost(c *gin.Context) {
 
 	ownerID, ok := GetOwnerIDFromGinContext(c)
 	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "owner information not found"})
+		c.Error(apperror.NewPermissionDenied("ownerID not found in context"))
 		return
 	}
 
 	postID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid post ID"})
+		c.Error(apperror.NewInvalidInput("invalid post ID", err))
 		return
 	}
 
@@ -263,11 +257,7 @@ func (h *PostHandler) GetPost(c *gin.Context) {
 	}
 	output, err := h.getPostUseCase.Execute(c.Request.Context(), input)
 	if err != nil {
-		if errors.Is(err, errors.New("post not found")) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "post not found"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "get post failed"})
+		c.Error(err)
 		return
 	}
 
@@ -275,19 +265,12 @@ func (h *PostHandler) GetPost(c *gin.Context) {
 }
 
 func (h *PostHandler) GetPublicPost(c *gin.Context) {
-
 	slug := c.Param("slug")
 
 	input := postUC.GetPublicPostInput{Slug: slug}
 	output, err := h.getPublicPostUseCase.Execute(c.Request.Context(), input)
-
 	if err != nil {
-
-		if errors.Is(err, post.ErrPostNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "post not found"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "get public post failed"})
+		c.Error(err)
 		return
 	}
 

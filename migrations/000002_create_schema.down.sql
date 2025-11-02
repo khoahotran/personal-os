@@ -1,4 +1,5 @@
 DROP TRIGGER IF EXISTS update_hobby_items_updated_at ON hobby_items;
+DROP TRIGGER IF EXISTS update_media_updated_at ON media;
 DROP TRIGGER IF EXISTS update_posts_updated_at ON posts;
 DROP TRIGGER IF EXISTS update_projects_updated_at ON projects;
 DROP TRIGGER IF EXISTS update_profiles_updated_at ON profiles;

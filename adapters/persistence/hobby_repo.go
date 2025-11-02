@@ -4,26 +4,29 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/khoahotran/personal-os/internal/domain/hobby"
+	"github.com/khoahotran/personal-os/pkg/apperror"
+	"github.com/khoahotran/personal-os/pkg/logger"
+	"go.uber.org/zap"
 )
 
 type postgresHobbyRepo struct {
-	db *pgxpool.Pool
+	db     *pgxpool.Pool
+	logger logger.Logger
 }
 
-func NewPostgresHobbyRepo(db *pgxpool.Pool) hobby.Repository {
-	return &postgresHobbyRepo{db: db}
+func NewPostgresHobbyRepo(db *pgxpool.Pool, logger logger.Logger) hobby.Repository {
+	return &postgresHobbyRepo{db: db, logger: logger}
 }
 
 var psqlHobby = sq.StatementBuilder.PlaceholderFormat(sq.Dollar)
 
-func scanHobbyItem(row pgx.Row) (*hobby.HobbyItem, error) {
+func scanHobbyItem(row pgx.Row, l logger.Logger) (*hobby.HobbyItem, error) {
 	hi := &hobby.HobbyItem{}
 	var metadataBytes []byte
 
@@ -36,42 +39,37 @@ func scanHobbyItem(row pgx.Row) (*hobby.HobbyItem, error) {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, hobby.ErrHobbyItemNotFound
 		}
-		return nil, fmt.Errorf("failed to scan hobby item row: %w", err)
+		return nil, apperror.NewInternal("failed to scan hobby item row", err)
 	}
 
 	if err := json.Unmarshal(metadataBytes, &hi.Metadata); err != nil {
+		l.Warn("Failed to unmarshal hobby metadata", zap.String("item_id", hi.ID.String()), zap.Error(err))
 		hi.Metadata = map[string]any{}
 	}
 	return hi, nil
 }
 
-func scanHobbyItems(rows pgx.Rows) ([]*hobby.HobbyItem, error) {
+func scanHobbyItems(rows pgx.Rows, l logger.Logger) ([]*hobby.HobbyItem, error) {
 	defer rows.Close()
 	items := make([]*hobby.HobbyItem, 0)
 	for rows.Next() {
 
-		hi := &hobby.HobbyItem{}
-		var metadataBytes []byte
-		err := rows.Scan(
-			&hi.ID, &hi.OwnerID, &hi.Category, &hi.Title,
-			&hi.Status, &hi.Rating, &hi.Notes, &metadataBytes,
-			&hi.IsPublic, &hi.CreatedAt, &hi.UpdatedAt,
-		)
+		hi, err := scanHobbyItem(rows, l)
 		if err != nil {
 			return nil, err
 		}
-		if err := json.Unmarshal(metadataBytes, &hi.Metadata); err != nil {
-			hi.Metadata = map[string]any{}
-		}
 		items = append(items, hi)
 	}
-	return items, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, apperror.NewInternal("error iterating hobby rows", err)
+	}
+	return items, nil
 }
 
 func (r *postgresHobbyRepo) Save(ctx context.Context, hi *hobby.HobbyItem) error {
 	metadataBytes, err := json.Marshal(hi.Metadata)
 	if err != nil {
-		return fmt.Errorf("failed to marshal hobby metadata: %w", err)
+		return apperror.NewInternal("failed to marshal hobby metadata", err)
 	}
 	query := `
 		INSERT INTO hobby_items (id, owner_id, category, title, status, rating, notes, metadata, is_public, created_at, updated_at)
@@ -81,13 +79,16 @@ func (r *postgresHobbyRepo) Save(ctx context.Context, hi *hobby.HobbyItem) error
 		hi.ID, hi.OwnerID, hi.Category, hi.Title, hi.Status, hi.Rating,
 		hi.Notes, metadataBytes, hi.IsPublic, hi.CreatedAt, hi.UpdatedAt,
 	)
+	if err != nil {
+		return apperror.NewInternal("failed to save hobby item", err)
+	}
 	return err
 }
 
 func (r *postgresHobbyRepo) Update(ctx context.Context, hi *hobby.HobbyItem) error {
 	metadataBytes, err := json.Marshal(hi.Metadata)
 	if err != nil {
-		return fmt.Errorf("failed to marshal hobby metadata for update: %w", err)
+		return apperror.NewInternal("failed to marshal hobby metadata", err)
 	}
 	query := `
 		UPDATE hobby_items SET
@@ -100,10 +101,10 @@ func (r *postgresHobbyRepo) Update(ctx context.Context, hi *hobby.HobbyItem) err
 		metadataBytes, hi.IsPublic, hi.OwnerID,
 	)
 	if err != nil {
-		return err
+		return apperror.NewInternal("failed to update hobby item", err)
 	}
 	if cmdTag.RowsAffected() == 0 {
-		return hobby.ErrHobbyItemNotFound
+		return apperror.NewNotFound("hobby item", hi.ID.String())
 	}
 	return nil
 }
@@ -112,10 +113,10 @@ func (r *postgresHobbyRepo) Delete(ctx context.Context, id uuid.UUID, ownerID uu
 	query := `DELETE FROM hobby_items WHERE id = $1 AND owner_id = $2`
 	cmdTag, err := r.db.Exec(ctx, query, id, ownerID)
 	if err != nil {
-		return err
+		return apperror.NewInternal("failed to delete hobby item", err)
 	}
 	if cmdTag.RowsAffected() == 0 {
-		return hobby.ErrHobbyItemNotFound
+		return apperror.NewNotFound("hobby item", id.String())
 	}
 	return nil
 }
@@ -123,7 +124,7 @@ func (r *postgresHobbyRepo) Delete(ctx context.Context, id uuid.UUID, ownerID uu
 func (r *postgresHobbyRepo) FindByID(ctx context.Context, id uuid.UUID, ownerID uuid.UUID) (*hobby.HobbyItem, error) {
 	query := `SELECT * FROM hobby_items WHERE id = $1 AND owner_id = $2`
 	row := r.db.QueryRow(ctx, query, id, ownerID)
-	return scanHobbyItem(row)
+	return scanHobbyItem(row, r.logger)
 }
 
 func (r *postgresHobbyRepo) ListByOwnerAndCategory(ctx context.Context, ownerID uuid.UUID, category string, limit, offset int) ([]*hobby.HobbyItem, error) {
@@ -134,12 +135,15 @@ func (r *postgresHobbyRepo) ListByOwnerAndCategory(ctx context.Context, ownerID 
 		Limit(uint64(limit)).
 		Offset(uint64(offset))
 
-	sql, args, _ := builder.ToSql()
+	sql, args, err := builder.ToSql()
+	if err != nil {
+		return nil, apperror.NewInternal("failed to build list hobby by owner query", err)
+	}
 	rows, err := r.db.Query(ctx, sql, args...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query hobby items by owner/category: %w", err)
+		return nil, apperror.NewInternal("failed to query hobby items by owner/category", err)
 	}
-	return scanHobbyItems(rows)
+	return scanHobbyItems(rows, r.logger)
 }
 
 func (r *postgresHobbyRepo) ListPublicByCategory(ctx context.Context, category string, limit, offset int) ([]*hobby.HobbyItem, error) {
@@ -150,10 +154,13 @@ func (r *postgresHobbyRepo) ListPublicByCategory(ctx context.Context, category s
 		Limit(uint64(limit)).
 		Offset(uint64(offset))
 
-	sql, args, _ := builder.ToSql()
+	sql, args, err := builder.ToSql()
+	if err != nil {
+		return nil, apperror.NewInternal("failed to build list public hobby items query", err)
+	}
 	rows, err := r.db.Query(ctx, sql, args...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query public hobby items by category: %w", err)
+		return nil, apperror.NewInternal("failed to query public hobby items by category", err)
 	}
-	return scanHobbyItems(rows)
+	return scanHobbyItems(rows, r.logger)
 }

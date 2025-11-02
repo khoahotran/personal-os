@@ -3,11 +3,13 @@ package persistence
 import (
 	"context"
 	"fmt"
+
 	"github.com/khoahotran/personal-os/internal/config"
+	"github.com/khoahotran/personal-os/pkg/logger"
 	"github.com/redis/go-redis/v9"
 )
 
-func NewRedisClient(cfg config.Config) (*redis.Client, error) {
+func NewRedisClient(cfg config.Config, log logger.Logger) (*redis.Client, error) {
 	rdb := redis.NewClient(&redis.Options{
 		Addr:     cfg.Redis.Addr,
 		Password: cfg.Redis.Password,
@@ -18,6 +20,6 @@ func NewRedisClient(cfg config.Config) (*redis.Client, error) {
 		return nil, fmt.Errorf("can not connect Redis: %w", err)
 	}
 
-	fmt.Println("Connect Redis successfully.")
+	log.Info("Connect Redis successfully.")
 	return rdb, nil
 }

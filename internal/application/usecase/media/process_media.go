@@ -3,66 +3,75 @@ package media
 import (
 	"context"
 	"errors"
-	"fmt"
-	"log"
 
 	"github.com/khoahotran/personal-os/adapters/event"
 	"github.com/khoahotran/personal-os/internal/application/service"
 	"github.com/khoahotran/personal-os/internal/domain/media"
+	"github.com/khoahotran/personal-os/pkg/apperror"
+	"github.com/khoahotran/personal-os/pkg/logger"
+	"go.uber.org/zap"
 )
 
 type ProcessMediaUseCase struct {
 	mediaRepo media.Repository
 	uploader  service.Uploader
+	logger    logger.Logger
 }
 
-func NewProcessMediaUseCase(r media.Repository, u service.Uploader) *ProcessMediaUseCase {
-	return &ProcessMediaUseCase{mediaRepo: r, uploader: u}
+func NewProcessMediaUseCase(r media.Repository, u service.Uploader, log logger.Logger) *ProcessMediaUseCase {
+	return &ProcessMediaUseCase{mediaRepo: r, uploader: u, logger: log}
 }
 
 func (uc *ProcessMediaUseCase) Execute(ctx context.Context, payload event.MediaEventPayload) error {
-	log.Printf("Worker UseCase processing event: %s cho MediaID: %s", payload.EventType, payload.MediaID)
+	l := uc.logger.With(zap.String("media_id", payload.MediaID.String()), zap.String("event_type", string(payload.EventType)))
+	l.Info("Worker UseCase processing media event")
 
 	m, err := uc.mediaRepo.FindByID(ctx, payload.MediaID, payload.OwnerID)
 	if err != nil {
-		if errors.Is(err, errors.New("media not found")) {
-			log.Printf("WARN: Media %s not found, skip.", payload.MediaID)
+		if errors.Is(err, apperror.ErrNotFound) {
+			l.Warn("Media not found, skipping event", zap.String("media_id", payload.MediaID.String()))
 			return nil
 		}
-		return fmt.Errorf("get media failed: %w", err)
+		return apperror.NewInternal("failed to get media", err)
 	}
 
 	if m.Status == media.StatusReady {
-		log.Printf("INFO: Media %s has status is 'ready', skip.", m.ID)
+		l.Info("Media already in 'ready' state, skipping", zap.String("status", string(m.Status)))
 		return nil
 	}
 
 	cldClient := uc.uploader.GetClient()
 	if cldClient == nil {
-		return fmt.Errorf("get cloudinary client from uploader failed")
+		return apperror.NewInternal("could not get cloudinary client from uploader", nil)
 	}
 
-	// Get original image asset
 	imgAsset, err := cldClient.Image(payload.OriginalPublicID)
 	if err != nil {
-		return fmt.Errorf("init cloudinary asset failed: %w", err)
+		return apperror.NewInternal("failed to create cloudinary asset", err)
 	}
 
-	// Thumbnail transform
-	imgAsset.Transformation = "c_limit,w_400"
-	thumbURL, err := imgAsset.String()
+	imgAsset.Transformation = "c_limit,w_1200"
+	mainURLStr, err := imgAsset.String()
 	if err != nil {
-		return fmt.Errorf("build Thumbnail URL failed: %w", err)
+		return apperror.NewInternal("failed to build main image URL", err)
 	}
 
-	m.URL = payload.OriginalURL
-	m.ThumbnailURL = &thumbURL
+	imgAsset.Transformation = "c_fill,g_auto,w_400,h_400"
+	thumbURLStr, err := imgAsset.String()
+	if err != nil {
+		return apperror.NewInternal("failed to build thumbnail URL", err)
+	}
+
+	l.Info("Generated Cloudinary URLs for media")
+
+	m.URL = mainURLStr
+	m.ThumbnailURL = &thumbURLStr
 	m.Status = media.StatusReady
 
 	if err := uc.mediaRepo.Update(ctx, m); err != nil {
-		return fmt.Errorf("update media %s to 'ready' failed: %w", m.ID, err)
+		return apperror.NewInternal("failed to update media to 'ready'", err)
 	}
 
-	log.Printf("Processed Media %s (Thumbnail: %s)", m.ID, thumbURL)
+	l.Info("Successfully processed media", zap.String("status", string(m.Status)))
 	return nil
 }

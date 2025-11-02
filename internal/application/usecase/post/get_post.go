@@ -2,23 +2,26 @@ package post
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 
 	"github.com/khoahotran/personal-os/internal/domain/post"
 	"github.com/khoahotran/personal-os/internal/domain/tag"
+	"github.com/khoahotran/personal-os/pkg/logger"
 )
 
 type GetPostUseCase struct {
 	postRepo post.Repository
 	tagRepo  tag.Repository
+	logger   logger.Logger
 }
 
-func NewGetPostUseCase(pRepo post.Repository, tRepo tag.Repository) *GetPostUseCase {
+func NewGetPostUseCase(pRepo post.Repository, tRepo tag.Repository, log logger.Logger) *GetPostUseCase {
 	return &GetPostUseCase{
 		postRepo: pRepo,
 		tagRepo:  tRepo,
+		logger:   log,
 	}
 }
 
@@ -33,15 +36,14 @@ type GetPostOutput struct {
 }
 
 func (uc *GetPostUseCase) Execute(ctx context.Context, input GetPostInput) (*GetPostOutput, error) {
-
 	p, err := uc.postRepo.FindByID(ctx, input.PostID, input.OwnerID)
 	if err != nil {
-		return nil, fmt.Errorf("get post failed: %w", err)
+		return nil, err
 	}
 
 	tags, err := uc.tagRepo.GetTagsForResource(ctx, p.ID, "post")
 	if err != nil {
-		fmt.Printf("WARNING: got post %s but get tags failed: %v\n", p.ID, err)
+		uc.logger.Warn("Failed to get tags for post", zap.String("post_id", p.ID.String()), zap.Error(err))
 	}
 
 	return &GetPostOutput{

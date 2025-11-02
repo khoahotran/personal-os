@@ -5,45 +5,51 @@ import (
 
 	"github.com/gin-gonic/gin"
 	profileUC "github.com/khoahotran/personal-os/internal/application/usecase/profile"
+	"github.com/khoahotran/personal-os/pkg/apperror"
+	"github.com/khoahotran/personal-os/pkg/logger"
 )
 
 type ProfileHandler struct {
 	profileUseCase *profileUC.ProfileUseCase
+	logger         logger.Logger
 }
 
-func NewProfileHandler(uc *profileUC.ProfileUseCase) *ProfileHandler {
+func NewProfileHandler(uc *profileUC.ProfileUseCase, log logger.Logger) *ProfileHandler {
 	return &ProfileHandler{
 		profileUseCase: uc,
+		logger:         log,
 	}
 }
 
 func (h *ProfileHandler) GetProfile(c *gin.Context) {
 	ownerID, ok := GetOwnerIDFromGinContext(c)
 	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "owner information not found"})
+		c.Error(apperror.NewPermissionDenied("ownerID not found in context"))
 		return
 	}
 
 	input := profileUC.GetProfileInput{OwnerID: ownerID}
 	output, err := h.profileUseCase.ExecuteGetProfile(c.Request.Context(), input)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "profile retrieval failed"})
+		c.Error(err)
 		return
 	}
 
-	c.JSON(http.StatusOK, ToProfileDTO(output.Profile))
+	responseDTO := ToProfileDTO(output.Profile)
+	c.JSON(http.StatusOK, responseDTO)
 }
 
 func (h *ProfileHandler) UpdateProfile(c *gin.Context) {
 	ownerID, ok := GetOwnerIDFromGinContext(c)
 	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "owner information not found"})
+		c.Error(apperror.NewPermissionDenied("ownerID not found in context"))
 		return
 	}
 
 	var req UpdateProfileRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request data", "details": err.Error()})
+		appErr := apperror.NewInvalidInput("invalid JSON body for profile update", err)
+		c.Error(appErr)
 		return
 	}
 
@@ -51,12 +57,14 @@ func (h *ProfileHandler) UpdateProfile(c *gin.Context) {
 		OwnerID:        ownerID,
 		Bio:            req.Bio,
 		CareerTimeline: req.ToDomainMilestones(),
+		ThemeSettings:  req.ThemeSettings,
 	}
 	output, err := h.profileUseCase.ExecuteUpdateProfile(c.Request.Context(), input)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "profile update failed"})
+		c.Error(err)
 		return
 	}
 
-	c.JSON(http.StatusOK, ToProfileDTO(output.Profile))
+	responseDTO := ToProfileDTO(output.Profile)
+	c.JSON(http.StatusOK, responseDTO)
 }

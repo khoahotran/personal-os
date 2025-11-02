@@ -2,25 +2,28 @@ package project
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
-
 	"github.com/khoahotran/personal-os/internal/domain/project"
 	"github.com/khoahotran/personal-os/internal/domain/tag"
+	"github.com/khoahotran/personal-os/pkg/apperror"
+	"github.com/khoahotran/personal-os/pkg/logger"
+	"go.uber.org/zap"
 )
 
 type CreateProjectUseCase struct {
 	projectRepo project.Repository
 	tagRepo     tag.Repository
+	logger      logger.Logger
 }
 
-func NewCreateProjectUseCase(pRepo project.Repository, tRepo tag.Repository) *CreateProjectUseCase {
+func NewCreateProjectUseCase(pRepo project.Repository, tRepo tag.Repository, log logger.Logger) *CreateProjectUseCase {
 	return &CreateProjectUseCase{
 		projectRepo: pRepo,
 		tagRepo:     tRepo,
+		logger:      log,
 	}
 }
 
@@ -36,19 +39,15 @@ type CreateProjectInput struct {
 	IsPublic      bool
 	TagNames      []string
 }
-
 type CreateProjectOutput struct {
 	ProjectID uuid.UUID
 	Slug      string
 }
 
 func (uc *CreateProjectUseCase) Execute(ctx context.Context, input CreateProjectInput) (*CreateProjectOutput, error) {
-
 	if input.Slug == "" {
 		input.Slug = strings.ToLower(strings.ReplaceAll(input.Title, " ", "-"))
-
 	}
-
 	now := time.Now().UTC()
 
 	newProject := &project.Project{
@@ -67,26 +66,24 @@ func (uc *CreateProjectUseCase) Execute(ctx context.Context, input CreateProject
 	}
 
 	if err := newProject.Validate(); err != nil {
-		return nil, err
+		return nil, apperror.NewInvalidInput("project validation failed", err)
 	}
 
 	tags, err := uc.tagRepo.FindOrCreateTags(ctx, input.TagNames)
 	if err != nil {
-		return nil, fmt.Errorf("process tags failed: %w", err)
+		return nil, apperror.NewInternal("failed to process tags", err)
 	}
 
 	if err := uc.projectRepo.Save(ctx, newProject); err != nil {
-		return nil, fmt.Errorf("save project failed: %w", err)
+		return nil, err
 	}
 
 	tagIDs := make([]uuid.UUID, len(tags))
 	for i, t := range tags {
 		tagIDs[i] = t.ID
 	}
-
-	err = uc.tagRepo.SetTagsForResource(ctx, newProject.ID, "project", tagIDs)
-	if err != nil {
-		fmt.Printf("WARNING: created project %s but set tags failed: %v\n", newProject.ID, err)
+	if err = uc.tagRepo.SetTagsForResource(ctx, newProject.ID, "project", tagIDs); err != nil {
+		uc.logger.Warn("Failed to set tags for new project", zap.String("project_id", newProject.ID.String()), zap.Error(err))
 	}
 
 	return &CreateProjectOutput{

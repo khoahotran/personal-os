@@ -5,26 +5,28 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/khoahotran/personal-os/internal/domain/media"
+	"github.com/khoahotran/personal-os/pkg/apperror"
+	"github.com/khoahotran/personal-os/pkg/logger"
 )
 
 type postgresMediaRepo struct {
-	db *pgxpool.Pool
+	db     *pgxpool.Pool
+	logger logger.Logger
 }
 
-func NewPostgresMediaRepo(db *pgxpool.Pool) media.Repository {
-	return &postgresMediaRepo{db: db}
+func NewPostgresMediaRepo(db *pgxpool.Pool, logger logger.Logger) media.Repository {
+	return &postgresMediaRepo{db: db, logger: logger}
 }
 
 var psqlMedia = sq.StatementBuilder.PlaceholderFormat(sq.Dollar)
 
-func scanMedia(row pgx.Row) (*media.Media, error) {
+func scanMedia(row pgx.Row, l logger.Logger) (*media.Media, error) {
 	m := &media.Media{}
 	var metadataBytes []byte
 	var thumbURL sql.NullString
@@ -36,9 +38,9 @@ func scanMedia(row pgx.Row) (*media.Media, error) {
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, errors.New("media not found")
+			return nil, apperror.NewNotFound("media", "")
 		}
-		return nil, fmt.Errorf("failed to scan media row: %w", err)
+		return nil, apperror.NewInternal("failed to scan media row", err)
 	}
 
 	if thumbURL.Valid {
@@ -50,18 +52,18 @@ func scanMedia(row pgx.Row) (*media.Media, error) {
 	return m, nil
 }
 
-func scanMedias(rows pgx.Rows) ([]*media.Media, error) {
+func scanMedias(rows pgx.Rows, l logger.Logger) ([]*media.Media, error) {
 	defer rows.Close()
 	medias := make([]*media.Media, 0)
 	for rows.Next() {
-		m, err := scanMedia(rows)
+		m, err := scanMedia(rows, l)
 		if err != nil {
 			return nil, err
 		}
 		medias = append(medias, m)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating media rows: %w", err)
+		return nil, apperror.NewInternal("error iterating media rows", err)
 	}
 	return medias, nil
 }
@@ -69,7 +71,7 @@ func scanMedias(rows pgx.Rows) ([]*media.Media, error) {
 func (r *postgresMediaRepo) Save(ctx context.Context, m *media.Media) error {
 	metadataBytes, err := json.Marshal(m.Metadata)
 	if err != nil {
-		return fmt.Errorf("failed to marshal media metadata: %w", err)
+		return apperror.NewInternal("failed to marshal media metadata", err)
 	}
 
 	query := `
@@ -86,7 +88,7 @@ func (r *postgresMediaRepo) Save(ctx context.Context, m *media.Media) error {
 func (r *postgresMediaRepo) Update(ctx context.Context, m *media.Media) error {
 	metadataBytes, err := json.Marshal(m.Metadata)
 	if err != nil {
-		return fmt.Errorf("failed to marshal media metadata: %w", err)
+		return apperror.NewInternal("failed to marshal media metadata", err)
 	}
 
 	query := `
@@ -100,10 +102,10 @@ func (r *postgresMediaRepo) Update(ctx context.Context, m *media.Media) error {
 		metadataBytes, m.IsPublic, m.OwnerID,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to update media: %w", err)
+		return apperror.NewInternal("failed to update media", err)
 	}
 	if cmdTag.RowsAffected() == 0 {
-		return errors.New("media not found or user not authorized")
+		return apperror.NewNotFound("media", m.ID.String())
 	}
 	return nil
 }
@@ -112,10 +114,10 @@ func (r *postgresMediaRepo) Delete(ctx context.Context, id uuid.UUID, ownerID uu
 	query := `DELETE FROM media WHERE id = $1 AND owner_id = $2`
 	cmdTag, err := r.db.Exec(ctx, query, id, ownerID)
 	if err != nil {
-		return fmt.Errorf("failed to delete media: %w", err)
+		return apperror.NewInternal("failed to delete media", err)
 	}
 	if cmdTag.RowsAffected() == 0 {
-		return errors.New("media not found or user not authorized")
+		return apperror.NewNotFound("media", id.String())
 	}
 	return nil
 }
@@ -123,7 +125,7 @@ func (r *postgresMediaRepo) Delete(ctx context.Context, id uuid.UUID, ownerID uu
 func (r *postgresMediaRepo) FindByID(ctx context.Context, id uuid.UUID, ownerID uuid.UUID) (*media.Media, error) {
 	query := `SELECT * FROM media WHERE id = $1 AND owner_id = $2`
 	row := r.db.QueryRow(ctx, query, id, ownerID)
-	return scanMedia(row)
+	return scanMedia(row, r.logger)
 }
 
 func (r *postgresMediaRepo) ListPublic(ctx context.Context, limit, offset int) ([]*media.Media, error) {
@@ -134,12 +136,15 @@ func (r *postgresMediaRepo) ListPublic(ctx context.Context, limit, offset int) (
 		Limit(uint64(limit)).
 		Offset(uint64(offset))
 
-	sql, args, _ := builder.ToSql()
+	sql, args, err := builder.ToSql()
+	if err != nil {
+		return nil, apperror.NewInternal("failed to build list public media query", err)
+	}
 	rows, err := r.db.Query(ctx, sql, args...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query public media: %w", err)
+		return nil, apperror.NewInternal("failed to query public media", err)
 	}
-	return scanMedias(rows)
+	return scanMedias(rows, r.logger)
 }
 
 func (r *postgresMediaRepo) ListByOwner(ctx context.Context, ownerID uuid.UUID, limit, offset int) ([]*media.Media, error) {
@@ -150,10 +155,13 @@ func (r *postgresMediaRepo) ListByOwner(ctx context.Context, ownerID uuid.UUID, 
 		Limit(uint64(limit)).
 		Offset(uint64(offset))
 
-	sql, args, _ := builder.ToSql()
+	sql, args, err := builder.ToSql()
+	if err != nil {
+		return nil, apperror.NewInternal("failed to build list media by owner query", err)
+	}
 	rows, err := r.db.Query(ctx, sql, args...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query media by owner: %w", err)
+		return nil, apperror.NewInternal("failed to query media by owner", err)
 	}
-	return scanMedias(rows)
+	return scanMedias(rows, r.logger)
 }

@@ -76,7 +76,7 @@ CREATE TABLE IF NOT EXISTS post_versions (
 );
 CREATE INDEX IF NOT EXISTS idx_post_versions_post_id ON post_versions(post_id);
 -- 6. MEDIA
-CREATE TABLE media (
+CREATE TABLE IF NOT EXISTS media (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     owner_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     provider VARCHAR(50) NOT NULL,
@@ -88,6 +88,7 @@ CREATE TABLE media (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+DROP TRIGGER IF EXISTS update_media_updated_at ON media;
 CREATE TRIGGER update_media_updated_at BEFORE
 UPDATE ON media FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
 -- 7. HOBBY_ITEMS

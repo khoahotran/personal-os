@@ -2,20 +2,22 @@ package project
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/google/uuid"
 	"github.com/khoahotran/personal-os/internal/domain/project"
 	"github.com/khoahotran/personal-os/internal/domain/tag"
+	"github.com/khoahotran/personal-os/pkg/logger"
+	"go.uber.org/zap"
 )
 
 type GetProjectUseCase struct {
 	projectRepo project.Repository
 	tagRepo     tag.Repository
+	logger      logger.Logger
 }
 
-func NewGetProjectUseCase(pRepo project.Repository, tRepo tag.Repository) *GetProjectUseCase {
-	return &GetProjectUseCase{projectRepo: pRepo, tagRepo: tRepo}
+func NewGetProjectUseCase(pRepo project.Repository, tRepo tag.Repository, log logger.Logger) *GetProjectUseCase {
+	return &GetProjectUseCase{projectRepo: pRepo, tagRepo: tRepo, logger: log}
 }
 
 type GetProjectInput struct {
@@ -32,10 +34,9 @@ func (uc *GetProjectUseCase) Execute(ctx context.Context, input GetProjectInput)
 	if err != nil {
 		return nil, err
 	}
-	fmt.Print("project: ", p)
 	tags, err := uc.tagRepo.GetTagsForResource(ctx, p.ID, "project")
 	if err != nil {
-		fmt.Printf("WARNING: got project %s but failed to get tags: %v\n", p.ID, err)
+		uc.logger.Warn("Failed to get tags for project", zap.String("project_id", p.ID.String()), zap.Error(err))
 	}
 	return &GetProjectOutput{Project: p, Tags: tags}, nil
 }
@@ -43,10 +44,11 @@ func (uc *GetProjectUseCase) Execute(ctx context.Context, input GetProjectInput)
 type GetPublicProjectUseCase struct {
 	projectRepo project.Repository
 	tagRepo     tag.Repository
+	logger      logger.Logger
 }
 
-func NewGetPublicProjectUseCase(pRepo project.Repository, tRepo tag.Repository) *GetPublicProjectUseCase {
-	return &GetPublicProjectUseCase{projectRepo: pRepo, tagRepo: tRepo}
+func NewGetPublicProjectUseCase(pRepo project.Repository, tRepo tag.Repository, log logger.Logger) *GetPublicProjectUseCase {
+	return &GetPublicProjectUseCase{projectRepo: pRepo, tagRepo: tRepo, logger: log}
 }
 
 type GetPublicProjectInput struct {
@@ -64,7 +66,7 @@ func (uc *GetPublicProjectUseCase) Execute(ctx context.Context, input GetPublicP
 	}
 	tags, err := uc.tagRepo.GetTagsForResource(ctx, p.ID, "project")
 	if err != nil {
-		fmt.Printf("WARNING: got public project %s but failed to get tags: %v\n", p.ID, err)
+		uc.logger.Warn("Failed to get tags for public project", zap.String("project_id", p.ID.String()), zap.Error(err))
 	}
 	return &GetPublicProjectOutput{Project: p, Tags: tags}, nil
 }

@@ -4,11 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 
 	"github.com/google/uuid"
 	"github.com/khoahotran/personal-os/internal/config"
+	"github.com/khoahotran/personal-os/pkg/logger"
 	"github.com/segmentio/kafka-go"
+	"go.uber.org/zap"
 )
 
 const (
@@ -52,9 +53,10 @@ type KafkaProducerClient struct {
 	PostEventsWriter  *kafka.Writer
 	MediaEventsWriter *kafka.Writer
 	ViewEventsWriter  *kafka.Writer
+	logger            logger.Logger
 }
 
-func NewKafkaProducerClient(cfg config.Config) (*KafkaProducerClient, error) {
+func NewKafkaProducerClient(cfg config.Config, log logger.Logger) (*KafkaProducerClient, error) {
 	brokers := cfg.Kafka.Brokers
 	if len(brokers) == 0 {
 		return nil, fmt.Errorf("config Kafka brokers not found")
@@ -73,16 +75,17 @@ func NewKafkaProducerClient(cfg config.Config) (*KafkaProducerClient, error) {
 		PostEventsWriter:  createWriter(TopicPostEvents),
 		MediaEventsWriter: createWriter(TopicMediaEvents),
 		ViewEventsWriter:  createWriter(TopicViewEvents),
+		logger:            log,
 	}
 
-	log.Println("Init Kafka Producers (Writers) successfully.")
+	log.Info("Initialize Kafka Producers successfully.")
 	return client, nil
 }
 
 func (c *KafkaProducerClient) PublishPostEvent(ctx context.Context, payload PostEventPayload) error {
 	msgBody, err := json.Marshal(payload)
 	if err != nil {
-		log.Printf("Kafka Marshal failed: %v", err)
+		c.logger.Error("Kafka Marshal (Post) failed", err, zap.String("post_id", payload.PostID.String()))
 		return err
 	}
 
@@ -92,9 +95,9 @@ func (c *KafkaProducerClient) PublishPostEvent(ctx context.Context, payload Post
 	})
 
 	if err != nil {
-		log.Printf("Kafka Write failed: %v", err)
+		c.logger.Error("Kafka Write (Post) failed", err, zap.String("post_id", payload.PostID.String()))
 	} else {
-		log.Printf("Sent event to Kafka: %s for PostID: %s", payload.EventType, payload.PostID)
+		c.logger.Info("Kafka event sent", zap.String("topic", TopicPostEvents), zap.String("event_type", string(payload.EventType)))
 	}
 	return err
 }
@@ -102,7 +105,7 @@ func (c *KafkaProducerClient) PublishPostEvent(ctx context.Context, payload Post
 func (c *KafkaProducerClient) PublishMediaEvent(ctx context.Context, payload MediaEventPayload) error {
 	msgBody, err := json.Marshal(payload)
 	if err != nil {
-		log.Printf("ERROR Kafka Marshal (Media): %v", err)
+		c.logger.Error("Kafka Marshal (Media) failed", err, zap.String("media_id", payload.MediaID.String()))
 		return err
 	}
 
@@ -112,9 +115,9 @@ func (c *KafkaProducerClient) PublishMediaEvent(ctx context.Context, payload Med
 	})
 
 	if err != nil {
-		log.Printf("ERROR Kafka Write (Media): %v", err)
+		c.logger.Error("Kafka Write (Media) failed", err, zap.String("media_id", payload.MediaID.String()))
 	} else {
-		log.Printf("Send event to Kafka: %s for MediaID: %s", payload.EventType, payload.MediaID)
+		c.logger.Info("Kafka event sent", zap.String("topic", TopicMediaEvents), zap.String("event_type", string(payload.EventType)))
 	}
 	return err
 }
@@ -129,5 +132,5 @@ func (c *KafkaProducerClient) Close() {
 	if c.ViewEventsWriter != nil {
 		c.ViewEventsWriter.Close()
 	}
-	fmt.Println("Closed Kafka Producers")
+	c.logger.Info("Closed Kafka Producers")
 }

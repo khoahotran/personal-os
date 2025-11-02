@@ -2,22 +2,21 @@ package media
 
 import (
 	"context"
-	"fmt"
-	"log"
 
 	"github.com/google/uuid"
 	"github.com/khoahotran/personal-os/internal/application/service"
 	"github.com/khoahotran/personal-os/internal/domain/media"
+	"github.com/khoahotran/personal-os/pkg/logger"
+	"go.uber.org/zap"
 )
-
-// List public
 
 type ListPublicMediaUseCase struct {
 	mediaRepo media.Repository
+	logger    logger.Logger
 }
 
-func NewListPublicMediaUseCase(r media.Repository) *ListPublicMediaUseCase {
-	return &ListPublicMediaUseCase{mediaRepo: r}
+func NewListPublicMediaUseCase(r media.Repository, log logger.Logger) *ListPublicMediaUseCase {
+	return &ListPublicMediaUseCase{mediaRepo: r, logger: log}
 }
 
 type ListPublicMediaInput struct{ Limit, Offset int }
@@ -32,19 +31,18 @@ func (uc *ListPublicMediaUseCase) Execute(ctx context.Context, in ListPublicMedi
 	}
 	medias, err := uc.mediaRepo.ListPublic(ctx, in.Limit, in.Offset)
 	if err != nil {
-		return nil, fmt.Errorf("get public media failed: %w", err)
+		return nil, err
 	}
 	return &ListPublicMediaOutput{Medias: medias}, nil
 }
 
-// Update
-
 type UpdateMediaUseCase struct {
 	mediaRepo media.Repository
+	logger    logger.Logger
 }
 
-func NewUpdateMediaUseCase(r media.Repository) *UpdateMediaUseCase {
-	return &UpdateMediaUseCase{mediaRepo: r}
+func NewUpdateMediaUseCase(r media.Repository, log logger.Logger) *UpdateMediaUseCase {
+	return &UpdateMediaUseCase{mediaRepo: r, logger: log}
 }
 
 type UpdateMediaInput struct {
@@ -61,18 +59,21 @@ func (uc *UpdateMediaUseCase) Execute(ctx context.Context, in UpdateMediaInput) 
 	}
 	m.Metadata = in.Metadata
 	m.IsPublic = in.IsPublic
-	return uc.mediaRepo.Update(ctx, m)
-}
 
-// Delete
+	if err := uc.mediaRepo.Update(ctx, m); err != nil {
+		return err
+	}
+	return nil
+}
 
 type DeleteMediaUseCase struct {
 	mediaRepo media.Repository
 	uploader  service.Uploader
+	logger    logger.Logger
 }
 
-func NewDeleteMediaUseCase(r media.Repository, u service.Uploader) *DeleteMediaUseCase {
-	return &DeleteMediaUseCase{mediaRepo: r, uploader: u}
+func NewDeleteMediaUseCase(r media.Repository, u service.Uploader, log logger.Logger) *DeleteMediaUseCase {
+	return &DeleteMediaUseCase{mediaRepo: r, uploader: u, logger: log}
 }
 
 type DeleteMediaInput struct {
@@ -88,11 +89,10 @@ func (uc *DeleteMediaUseCase) Execute(ctx context.Context, in DeleteMediaInput) 
 
 	if publicID, ok := m.Metadata["original_public_id"].(string); ok {
 		if err := uc.uploader.Delete(ctx, publicID); err != nil {
-			log.Printf("WARNING: delete media %s failed (Cloudinary): %v", m.ID, err)
-
+			uc.logger.Warn("Failed to delete media from Cloudinary, proceeding with DB delete", zap.String("public_id", publicID), zap.Error(err))
 		}
 	} else {
-		log.Printf("WARNING: 'original_public_id' not found for media %s", m.ID)
+		uc.logger.Warn("No 'original_public_id' found in metadata, cannot delete from Cloudinary", zap.String("media_id", m.ID.String()))
 	}
 
 	return uc.mediaRepo.Delete(ctx, in.MediaID, in.OwnerID)

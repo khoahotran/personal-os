@@ -2,21 +2,24 @@ package project
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/khoahotran/personal-os/internal/domain/project"
 	"github.com/khoahotran/personal-os/internal/domain/tag"
+	"github.com/khoahotran/personal-os/pkg/apperror"
+	"github.com/khoahotran/personal-os/pkg/logger"
+	"go.uber.org/zap"
 )
 
 type UpdateProjectUseCase struct {
 	projectRepo project.Repository
 	tagRepo     tag.Repository
+	logger      logger.Logger
 }
 
-func NewUpdateProjectUseCase(pRepo project.Repository, tRepo tag.Repository) *UpdateProjectUseCase {
-	return &UpdateProjectUseCase{projectRepo: pRepo, tagRepo: tRepo}
+func NewUpdateProjectUseCase(pRepo project.Repository, tRepo tag.Repository, log logger.Logger) *UpdateProjectUseCase {
+	return &UpdateProjectUseCase{projectRepo: pRepo, tagRepo: tRepo, logger: log}
 }
 
 type UpdateProjectInput struct {
@@ -37,7 +40,6 @@ type UpdateProjectOutput struct {
 }
 
 func (uc *UpdateProjectUseCase) Execute(ctx context.Context, input UpdateProjectInput) (*UpdateProjectOutput, error) {
-
 	p, err := uc.projectRepo.FindByID(ctx, input.ProjectID, input.OwnerID)
 	if err != nil {
 		return nil, err
@@ -54,23 +56,22 @@ func (uc *UpdateProjectUseCase) Execute(ctx context.Context, input UpdateProject
 	p.UpdatedAt = time.Now().UTC()
 
 	if err := p.Validate(); err != nil {
-		return nil, err
+		return nil, apperror.NewInvalidInput("project validation failed", err)
 	}
 	if err := uc.projectRepo.Update(ctx, p); err != nil {
-		return nil, fmt.Errorf("update project failed: %w", err)
+		return nil, err
 	}
 
 	tags, err := uc.tagRepo.FindOrCreateTags(ctx, input.TagNames)
 	if err != nil {
-
-		return nil, fmt.Errorf("process tags failed: %w", err)
+		return nil, apperror.NewInternal("failed to process tags", err)
 	}
 	tagIDs := make([]uuid.UUID, len(tags))
 	for i, t := range tags {
 		tagIDs[i] = t.ID
 	}
 	if err = uc.tagRepo.SetTagsForResource(ctx, p.ID, "project", tagIDs); err != nil {
-		fmt.Printf("WARNING: updated project %s but set tags failed: %v\n", p.ID, err)
+		uc.logger.Warn("Failed to set tags during project update", zap.String("project_id", p.ID.String()), zap.Error(err))
 	}
 
 	return &UpdateProjectOutput{Project: p}, nil

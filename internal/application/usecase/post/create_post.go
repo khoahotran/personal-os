@@ -4,16 +4,18 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 
 	"github.com/khoahotran/personal-os/adapters/event"
 	"github.com/khoahotran/personal-os/internal/application/service"
 	"github.com/khoahotran/personal-os/internal/domain/post"
 	"github.com/khoahotran/personal-os/internal/domain/tag"
+	"github.com/khoahotran/personal-os/pkg/apperror"
+	"github.com/khoahotran/personal-os/pkg/logger"
 )
 
 type CreatePostUseCase struct {
@@ -21,14 +23,16 @@ type CreatePostUseCase struct {
 	tagRepo     tag.Repository
 	kafkaClient *event.KafkaProducerClient
 	uploader    service.Uploader
+	logger      logger.Logger
 }
 
-func NewCreatePostUseCase(pRepo post.Repository, tRepo tag.Repository, kClient *event.KafkaProducerClient, uploader service.Uploader) *CreatePostUseCase {
+func NewCreatePostUseCase(pRepo post.Repository, tRepo tag.Repository, kClient *event.KafkaProducerClient, uploader service.Uploader, log logger.Logger) *CreatePostUseCase {
 	return &CreatePostUseCase{
 		postRepo:    pRepo,
 		tagRepo:     tRepo,
 		kafkaClient: kClient,
 		uploader:    uploader,
+		logger:      log,
 	}
 }
 
@@ -49,7 +53,6 @@ type CreatePostOutput struct {
 }
 
 func (uc *CreatePostUseCase) Execute(ctx context.Context, input CreatePostInput) (*CreatePostOutput, error) {
-
 	if input.Slug == "" {
 		input.Slug = strings.ToLower(strings.ReplaceAll(input.Title, " ", "-"))
 	}
@@ -59,7 +62,6 @@ func (uc *CreatePostUseCase) Execute(ctx context.Context, input CreatePostInput)
 	if input.Metadata == nil {
 		input.Metadata = make(map[string]any)
 	}
-	fmt.Printf("DEBUG: Input RequestedStatus: %s\n", input.RequestedStatus)
 	input.Metadata["requested_status"] = input.RequestedStatus
 
 	newPost := &post.Post{
@@ -76,7 +78,7 @@ func (uc *CreatePostUseCase) Execute(ctx context.Context, input CreatePostInput)
 	}
 
 	if err := newPost.Validate(); err != nil {
-		return nil, err
+		return nil, apperror.NewInvalidInput("validation failed", err)
 	}
 
 	originalFolder := fmt.Sprintf("users/%s/originals", input.OwnerID.String())
@@ -84,8 +86,9 @@ func (uc *CreatePostUseCase) Execute(ctx context.Context, input CreatePostInput)
 
 	originalURL, err := uc.uploader.Upload(ctx, input.File, originalFolder, originalPublicID)
 	if err != nil {
-		return nil, fmt.Errorf("upload original file failed: %w", err)
+		return nil, apperror.NewInternal("failed to upload original file", err)
 	}
+	originalPublicID =  originalFolder + newPost.ID.String()
 
 	if newPost.Metadata == nil {
 		newPost.Metadata = make(map[string]any)
@@ -100,7 +103,7 @@ func (uc *CreatePostUseCase) Execute(ctx context.Context, input CreatePostInput)
 
 	if err := uc.postRepo.Save(ctx, newPost); err != nil {
 		go uc.uploader.Delete(context.Background(), originalPublicID)
-		return nil, fmt.Errorf("save post failed: %w", err)
+		return nil, err
 	}
 
 	tagIDs := make([]uuid.UUID, len(tags))
@@ -109,7 +112,7 @@ func (uc *CreatePostUseCase) Execute(ctx context.Context, input CreatePostInput)
 	}
 
 	if err = uc.tagRepo.SetTagsForResource(ctx, newPost.ID, "post", tagIDs); err != nil {
-		fmt.Printf("WARNING: created post %s but assign tags failed: %v\n", newPost.ID, err)
+		uc.logger.Warn("Failed to set tags for new post", zap.String("post_id", newPost.ID.String()), zap.Error(err))
 	}
 
 	go func() {
@@ -119,18 +122,7 @@ func (uc *CreatePostUseCase) Execute(ctx context.Context, input CreatePostInput)
 			OwnerID:   newPost.OwnerID,
 		})
 		if err != nil {
-			log.Printf("ERROR (background): Send 'created' event to Kafka failed for post %s: %v", newPost.ID, err)
-		}
-
-		if input.RequestedStatus == post.StatusPublic {
-			err := uc.kafkaClient.PublishPostEvent(context.Background(), event.PostEventPayload{
-				EventType: event.PostEventTypePublished,
-				PostID:    newPost.ID,
-				OwnerID:   newPost.OwnerID,
-			})
-			if err != nil {
-				log.Printf("ERROR (background): Sent 'published' event to Kafka failed for post %s: %v", newPost.ID, err)
-			}
+			uc.logger.Error("Failed to publish Kafka 'created' event", err, zap.String("post_id", newPost.ID.String()))
 		}
 	}()
 

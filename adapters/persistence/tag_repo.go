@@ -10,14 +10,17 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/khoahotran/personal-os/internal/domain/tag"
+	"github.com/khoahotran/personal-os/pkg/apperror"
+	"github.com/khoahotran/personal-os/pkg/logger"
 )
 
 type postgresTagRepo struct {
-	db *pgxpool.Pool
+	db     *pgxpool.Pool
+	logger logger.Logger
 }
 
-func NewPostgresTagRepo(db *pgxpool.Pool) tag.Repository {
-	return &postgresTagRepo{db: db}
+func NewPostgresTagRepo(db *pgxpool.Pool, logger logger.Logger) tag.Repository {
+	return &postgresTagRepo{db: db, logger: logger}
 }
 
 func (r *postgresTagRepo) FindOrCreateTags(ctx context.Context, tagNames []string) ([]tag.Tag, error) {
@@ -48,13 +51,13 @@ func (r *postgresTagRepo) FindOrCreateTags(ctx context.Context, tagNames []strin
 	insertQuery += strings.Join(inserts, ",") + " ON CONFLICT (slug) DO NOTHING"
 
 	if _, err := r.db.Exec(ctx, insertQuery, args...); err != nil {
-		return nil, fmt.Errorf("failed to bulk insert tags: %w", err)
+		return nil, apperror.NewInternal("failed to bulk insert tags", err)
 	}
 
 	query := `SELECT id, name, slug FROM tags WHERE slug = ANY($1)`
 	rows, err := r.db.Query(ctx, query, slugs)
 	if err != nil {
-		return nil, fmt.Errorf("failed to retrieve tags: %w", err)
+		return nil, apperror.NewInternal("failed to retrieve tags", err)
 	}
 	defer rows.Close()
 
@@ -62,18 +65,21 @@ func (r *postgresTagRepo) FindOrCreateTags(ctx context.Context, tagNames []strin
 	for rows.Next() {
 		var t tag.Tag
 		if err := rows.Scan(&t.ID, &t.Name, &t.Slug); err != nil {
-			return nil, err
+			return nil, apperror.NewInternal("failed to scan tag", err)
 		}
 		tags = append(tags, t)
 	}
-	return tags, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, apperror.NewInternal("error iterating tags", err)
+	}
+	return tags, nil
 }
 
 func (r *postgresTagRepo) SetTagsForResource(ctx context.Context, resourceID uuid.UUID, resourceType string, tagIDs []uuid.UUID) error {
 
 	deleteQuery := `DELETE FROM tag_relations WHERE resource_id = $1 AND resource_type = $2`
 	if _, err := r.db.Exec(ctx, deleteQuery, resourceID, resourceType); err != nil {
-		return fmt.Errorf("failed to delete old tags: %w", err)
+		return apperror.NewInternal("failed to delete old tags", err)
 	}
 
 	if len(tagIDs) == 0 {
@@ -93,7 +99,7 @@ func (r *postgresTagRepo) SetTagsForResource(ctx context.Context, resourceID uui
 	)
 
 	if err != nil {
-		return fmt.Errorf("failed to set new tags: %w", err)
+		return apperror.NewInternal("failed to set new tags", err)
 	}
 	return nil
 }
@@ -107,7 +113,7 @@ func (r *postgresTagRepo) GetTagsForResource(ctx context.Context, resourceID uui
 	`
 	rows, err := r.db.Query(ctx, query, resourceID, resourceType)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get tags for resource: %w", err)
+		return nil, apperror.NewInternal("failed to scan tag", err)
 	}
 	defer rows.Close()
 
@@ -115,9 +121,12 @@ func (r *postgresTagRepo) GetTagsForResource(ctx context.Context, resourceID uui
 	for rows.Next() {
 		var t tag.Tag
 		if err := rows.Scan(&t.ID, &t.Name, &t.Slug); err != nil {
-			return nil, err
+			return nil, apperror.NewInternal("failed to scan tag", err)
 		}
 		tags = append(tags, t)
 	}
-	return tags, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, apperror.NewInternal("error iterating tags", err)
+	}
+	return tags, nil
 }

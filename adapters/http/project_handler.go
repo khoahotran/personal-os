@@ -1,15 +1,15 @@
 package http
 
 import (
-	"errors"
 	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-
 	projectUC "github.com/khoahotran/personal-os/internal/application/usecase/project"
 	"github.com/khoahotran/personal-os/internal/domain/project"
+	"github.com/khoahotran/personal-os/pkg/apperror"
+	"github.com/khoahotran/personal-os/pkg/logger"
 )
 
 type ProjectHandler struct {
@@ -20,6 +20,7 @@ type ProjectHandler struct {
 	getPublicProjectUseCase   *projectUC.GetPublicProjectUseCase
 	updateProjectUseCase      *projectUC.UpdateProjectUseCase
 	deleteProjectUseCase      *projectUC.DeleteProjectUseCase
+	logger                    logger.Logger
 }
 
 func NewProjectHandler(
@@ -30,6 +31,7 @@ func NewProjectHandler(
 	getPublicUC *projectUC.GetPublicProjectUseCase,
 	updateUC *projectUC.UpdateProjectUseCase,
 	deleteUC *projectUC.DeleteProjectUseCase,
+	log logger.Logger,
 ) *ProjectHandler {
 	return &ProjectHandler{
 		createProjectUseCase:      createUC,
@@ -39,18 +41,19 @@ func NewProjectHandler(
 		getPublicProjectUseCase:   getPublicUC,
 		updateProjectUseCase:      updateUC,
 		deleteProjectUseCase:      deleteUC,
+		logger:                    log,
 	}
 }
 
 func (h *ProjectHandler) CreateProject(c *gin.Context) {
 	ownerID, ok := GetOwnerIDFromGinContext(c)
 	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "owner information not found"})
+		c.Error(apperror.NewPermissionDenied("ownerID not found in context"))
 		return
 	}
 	var req CreateProjectRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request data", "details": err.Error()})
+		c.Error(apperror.NewInvalidInput("invalid request data", err))
 		return
 	}
 
@@ -69,7 +72,7 @@ func (h *ProjectHandler) CreateProject(c *gin.Context) {
 
 	output, err := h.createProjectUseCase.Execute(c.Request.Context(), input)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "create project failed", "details": err.Error()})
+		c.Error(err)
 		return
 	}
 	c.JSON(http.StatusCreated, gin.H{"project_id": output.ProjectID, "slug": output.Slug})
@@ -78,17 +81,17 @@ func (h *ProjectHandler) CreateProject(c *gin.Context) {
 func (h *ProjectHandler) UpdateProject(c *gin.Context) {
 	ownerID, ok := GetOwnerIDFromGinContext(c)
 	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "owner information not found"})
+		c.Error(apperror.NewPermissionDenied("ownerID not found in context"))
 		return
 	}
 	projectID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid project ID"})
+		c.Error(apperror.NewInvalidInput("invalid project ID", err))
 		return
 	}
 	var req UpdateProjectRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request data", "details": err.Error()})
+		c.Error(apperror.NewInvalidInput("invalid request data", err))
 		return
 	}
 
@@ -108,11 +111,7 @@ func (h *ProjectHandler) UpdateProject(c *gin.Context) {
 
 	output, err := h.updateProjectUseCase.Execute(c.Request.Context(), input)
 	if err != nil {
-		if errors.Is(err, project.ErrProjectNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "project not found or no permission"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "update project failed", "details": err.Error()})
+		c.Error(err)
 		return
 	}
 	c.JSON(http.StatusOK, ToProjectSummaryDTO(output.Project))
@@ -121,22 +120,18 @@ func (h *ProjectHandler) UpdateProject(c *gin.Context) {
 func (h *ProjectHandler) DeleteProject(c *gin.Context) {
 	ownerID, ok := GetOwnerIDFromGinContext(c)
 	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "owner information not found"})
+		c.Error(apperror.NewPermissionDenied("ownerID not found in context"))
 		return
 	}
 	projectID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid project ID"})
+		c.Error(apperror.NewInvalidInput("invalid project ID", err))
 		return
 	}
 
 	input := projectUC.DeleteProjectInput{ProjectID: projectID, OwnerID: ownerID}
 	if err := h.deleteProjectUseCase.Execute(c.Request.Context(), input); err != nil {
-		if errors.Is(err, project.ErrProjectNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "project not found or no permission"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "delete project failed", "details": err.Error()})
+		c.Error(err)
 		return
 	}
 	c.Status(http.StatusNoContent)
@@ -145,23 +140,18 @@ func (h *ProjectHandler) DeleteProject(c *gin.Context) {
 func (h *ProjectHandler) GetProject(c *gin.Context) {
 	ownerID, ok := GetOwnerIDFromGinContext(c)
 	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "owner information not found"})
+		c.Error(apperror.NewPermissionDenied("ownerID not found in context"))
 		return
 	}
 	projectID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid project ID"})
+		c.Error(apperror.NewInvalidInput("invalid project ID", err))
 		return
 	}
-
 	input := projectUC.GetProjectInput{ProjectID: projectID, OwnerID: ownerID}
 	output, err := h.getProjectUseCase.Execute(c.Request.Context(), input)
 	if err != nil {
-		if errors.Is(err, project.ErrProjectNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "project not found"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "get project failed"})
+		c.Error(err)
 		return
 	}
 	c.JSON(http.StatusOK, ToProjectDTO(output.Project, output.Tags))
@@ -170,7 +160,7 @@ func (h *ProjectHandler) GetProject(c *gin.Context) {
 func (h *ProjectHandler) ListProjects(c *gin.Context) {
 	ownerID, ok := GetOwnerIDFromGinContext(c)
 	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "owner information not found"})
+		c.Error(apperror.NewPermissionDenied("ownerID not found in context"))
 		return
 	}
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
@@ -179,7 +169,7 @@ func (h *ProjectHandler) ListProjects(c *gin.Context) {
 	input := projectUC.ListProjectsInput{OwnerID: ownerID, Page: page, Limit: limit}
 	output, err := h.listProjectsUseCase.Execute(c.Request.Context(), input)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "get list project failed"})
+		c.Error(err)
 		return
 	}
 	dtos := make([]ProjectSummaryDTO, len(output.Projects))
@@ -194,11 +184,7 @@ func (h *ProjectHandler) GetPublicProject(c *gin.Context) {
 	input := projectUC.GetPublicProjectInput{Slug: slug}
 	output, err := h.getPublicProjectUseCase.Execute(c.Request.Context(), input)
 	if err != nil {
-		if errors.Is(err, project.ErrProjectNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "project not found"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "get public project failed"})
+		c.Error(err)
 		return
 	}
 	c.JSON(http.StatusOK, ToProjectDTO(output.Project, output.Tags))
@@ -211,7 +197,7 @@ func (h *ProjectHandler) ListPublicProjects(c *gin.Context) {
 	input := projectUC.ListPublicProjectsInput{Page: page, Limit: limit}
 	output, err := h.listPublicProjectsUseCase.Execute(c.Request.Context(), input)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "get list public project failed"})
+		c.Error(err)
 		return
 	}
 	dtos := make([]ProjectSummaryDTO, len(output.Projects))

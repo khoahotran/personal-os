@@ -4,20 +4,23 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 
 	"github.com/cloudinary/cloudinary-go/v2"
 	"github.com/cloudinary/cloudinary-go/v2/api/uploader"
+	"go.uber.org/zap"
 
 	"github.com/khoahotran/personal-os/internal/application/service"
 	"github.com/khoahotran/personal-os/internal/config"
+	"github.com/khoahotran/personal-os/pkg/apperror"
+	"github.com/khoahotran/personal-os/pkg/logger"
 )
 
 type cloudinaryAdapter struct {
-	cld *cloudinary.Cloudinary
+	cld    *cloudinary.Cloudinary
+	logger logger.Logger
 }
 
-func NewCloudinaryAdapter(cfg config.Config) (service.Uploader, error) {
+func NewCloudinaryAdapter(cfg config.Config, log logger.Logger) (service.Uploader, error) {
 
 	if cfg.Cloudinary.CloudName == "" {
 		return nil, fmt.Errorf("cloudinary cloud_name has not config")
@@ -32,8 +35,8 @@ func NewCloudinaryAdapter(cfg config.Config) (service.Uploader, error) {
 		return nil, fmt.Errorf("cannot init cloudinary: %w", err)
 	}
 
-	log.Println("connect Cloudinary successfully.")
-	return &cloudinaryAdapter{cld: cld}, nil
+	log.Info("Connect Cloudinary successfully.")
+	return &cloudinaryAdapter{cld: cld, logger: log}, nil
 }
 
 func (a *cloudinaryAdapter) Upload(ctx context.Context, file io.Reader, folder string, publicID string) (string, error) {
@@ -43,7 +46,7 @@ func (a *cloudinaryAdapter) Upload(ctx context.Context, file io.Reader, folder s
 	}
 	result, err := a.cld.Upload.Upload(ctx, file, uploadParams)
 	if err != nil {
-		return "", fmt.Errorf("failed to upload cloudinary: %w", err)
+		return "", apperror.NewInternal("failed to upload to cloudinary", err)
 	}
 	return result.SecureURL, nil
 }
@@ -53,7 +56,7 @@ func (a *cloudinaryAdapter) Delete(ctx context.Context, publicID string) error {
 		PublicID: publicID,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to delete cloudinary: %w", err)
+		a.logger.Warn("Failed to delete asset from cloudinary", zap.String("public_id", publicID), zap.Error(err))
 	}
 	return nil
 }

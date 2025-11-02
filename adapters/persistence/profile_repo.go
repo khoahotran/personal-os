@@ -4,21 +4,24 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.uber.org/zap"
 
 	"github.com/khoahotran/personal-os/internal/domain/profile"
+	"github.com/khoahotran/personal-os/pkg/apperror"
+	"github.com/khoahotran/personal-os/pkg/logger"
 )
 
 type postgresProfileRepo struct {
-	db *pgxpool.Pool
+	db     *pgxpool.Pool
+	logger logger.Logger
 }
 
-func NewPostgresProfileRepo(db *pgxpool.Pool) profile.Repository {
-	return &postgresProfileRepo{db: db}
+func NewPostgresProfileRepo(db *pgxpool.Pool, logger logger.Logger) profile.Repository {
+	return &postgresProfileRepo{db: db, logger: logger}
 }
 
 func (r *postgresProfileRepo) GetByUserID(ctx context.Context, ownerID uuid.UUID) (*profile.Profile, error) {
@@ -46,15 +49,17 @@ func (r *postgresProfileRepo) GetByUserID(ctx context.Context, ownerID uuid.UUID
 				ThemeSettings:  map[string]any{},
 			}, nil
 		}
-		return nil, fmt.Errorf("query profile failed: %w", err)
+		return nil, apperror.NewInternal("failed to query profile", err)
 	}
 
 	// Unmarshal JSONB
 	if err := json.Unmarshal(careerTimelineBytes, &p.CareerTimeline); err != nil {
-		return nil, fmt.Errorf("error when unmarshal career_timeline: %w", err)
+		r.logger.Warn("Failed to unmarshal career_timeline", zap.String("owner_id", ownerID.String()), zap.Error(err))
+		p.CareerTimeline = []profile.CareerMilestone{}
 	}
 	if err := json.Unmarshal(themeSettingsBytes, &p.ThemeSettings); err != nil {
-		return nil, fmt.Errorf("error when unmarshal theme_settings: %w", err)
+		r.logger.Warn("Failed to unmarshal theme_settings", zap.String("owner_id", ownerID.String()), zap.Error(err))
+		p.ThemeSettings = map[string]any{}
 	}
 
 	return p, nil
@@ -63,12 +68,12 @@ func (r *postgresProfileRepo) GetByUserID(ctx context.Context, ownerID uuid.UUID
 func (r *postgresProfileRepo) Upsert(ctx context.Context, p *profile.Profile) error {
 	careerTimelineBytes, err := json.Marshal(p.CareerTimeline)
 	if err != nil {
-		return fmt.Errorf("error when marshal career_timeline: %w", err)
+		return apperror.NewInternal("failed to marshal career_timeline", err)
 	}
 
 	themeSettingsBytes, err := json.Marshal(p.ThemeSettings)
 	if err != nil {
-		return fmt.Errorf("error when marshal theme_settings: %w", err)
+		return apperror.NewInternal("failed to marshal theme_settings", err)
 	}
 
 	query := `
@@ -88,7 +93,7 @@ func (r *postgresProfileRepo) Upsert(ctx context.Context, p *profile.Profile) er
 	)
 
 	if err != nil {
-		return fmt.Errorf("error when upsert profile: %w", err)
+		return apperror.NewInternal("failed to upsert profile", err)
 	}
 	return nil
 }

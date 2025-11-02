@@ -2,6 +2,7 @@ package config
 
 import (
 	"log"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -34,18 +35,25 @@ type Config struct {
 	} `mapstructure:"cloudinary"`
 }
 
-func LoadConfig() (cfg Config, err error) {
-
-	err = godotenv.Load()
-	if err != nil {
-		log.Println("warning: .env file not found, use default.")
+func LoadConfig(paths ...string) (cfg Config, err error) {
+	var rootPath string
+	if len(paths) > 0 {
+		rootPath = paths[0]
+	} else {
+		rootPath = "."
 	}
 
-	viper.AddConfigPath(".")
+	envPath := filepath.Join(rootPath, ".env")
+	if err = godotenv.Load(envPath); err != nil {
+		log.Printf("Warning: .env file not found at %s, reading from system env.", envPath)
+	}
+
+	viper.AddConfigPath(rootPath)
 	viper.SetConfigName("config")
 	viper.SetConfigType("yaml")
+
 	if err = viper.ReadInConfig(); err != nil {
-		log.Printf("note: config.yaml not found, read .env only. Error: %v", err)
+		log.Printf("Note: config.yaml not found, reading from env only. Error: %v", err)
 	}
 
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))

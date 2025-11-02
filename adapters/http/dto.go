@@ -32,6 +32,7 @@ type UpdateProfileRequest struct {
 		Title       string    `json:"title" binding:"required"`
 		Description string    `json:"description"`
 	} `json:"career_timeline"`
+	ThemeSettings map[string]any `json:"theme_settings"`
 }
 
 func ToProfileDTO(p *profile.Profile) ProfileDTO {
@@ -86,7 +87,15 @@ type PostDTO struct {
 	Tags            []string   `json:"tags"`
 }
 
-func (r *CreatePostRequest) ToDomainPostStatus() post.PostStatus {
+type UpdatePostRequest struct {
+	Title   string   `json:"title" binding:"required"`
+	Content string   `json:"content"`
+	Slug    string   `json:"slug" binding:"required"`
+	Status  string   `json:"status" binding:"required,oneof=draft private public"`
+	Tags    []string `json:"tags"`
+}
+
+func (r *UpdatePostRequest) ToDomainPostStatus() post.PostStatus {
 	switch r.Status {
 	case "public":
 		return post.StatusPublic

@@ -4,28 +4,31 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.uber.org/zap"
 
 	"github.com/khoahotran/personal-os/internal/domain/project"
+	"github.com/khoahotran/personal-os/pkg/apperror"
+	"github.com/khoahotran/personal-os/pkg/logger"
 )
 
 type postgresProjectRepo struct {
-	db *pgxpool.Pool
+	db     *pgxpool.Pool
+	logger logger.Logger
 }
 
-func NewPostgresProjectRepo(db *pgxpool.Pool) project.Repository {
-	return &postgresProjectRepo{db: db}
+func NewPostgresProjectRepo(db *pgxpool.Pool, logger logger.Logger) project.Repository {
+	return &postgresProjectRepo{db: db, logger: logger}
 }
 
 var psqlProject = sq.StatementBuilder.PlaceholderFormat(sq.Dollar)
 
-func scanProject(row pgx.Row) (*project.Project, error) {
+func scanProject(row pgx.Row, l logger.Logger) (*project.Project, error) {
 	p := &project.Project{}
 	var mediaBytes []byte
 
@@ -45,51 +48,32 @@ func scanProject(row pgx.Row) (*project.Project, error) {
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, project.ErrProjectNotFound
+			return nil, apperror.NewNotFound("project", "")
 		}
-		return nil, fmt.Errorf("failed to scan project row: %w", err)
+		return nil, apperror.NewInternal("failed to scan project row", err)
 	}
 
 	if err := json.Unmarshal(mediaBytes, &p.Media); err != nil {
-		fmt.Printf("WARN: failed to unmarshal project media for %s: %v\n", p.ID, err)
+		l.Warn("Failed to unmarshal project media", zap.String("project_id", p.ID.String()), zap.Error(err))
 		p.Media = []project.ProjectMedia{}
 	}
 
 	return p, nil
 }
 
-func scanProjects(rows pgx.Rows) ([]*project.Project, error) {
+func scanProjects(rows pgx.Rows, l logger.Logger) ([]*project.Project, error) {
 	defer rows.Close()
 	projects := make([]*project.Project, 0)
 
 	for rows.Next() {
-		p := &project.Project{}
-		var mediaBytes []byte
-		err := rows.Scan(
-			&p.ID,
-			&p.OwnerID,
-			&p.Slug,
-			&p.Title,
-			&p.Description,
-			&p.Stack,
-			&p.RepositoryURL,
-			&p.LiveURL,
-			&mediaBytes,
-			&p.IsPublic,
-			&p.CreatedAt,
-			&p.UpdatedAt,
-		)
+		p, err := scanProject(rows, l)
 		if err != nil {
-			return nil, fmt.Errorf("failed to scan project row during iteration: %w", err)
-		}
-		if err := json.Unmarshal(mediaBytes, &p.Media); err != nil {
-			fmt.Printf("WARN: failed to unmarshal project media for %s: %v\n", p.ID, err)
-			p.Media = []project.ProjectMedia{}
+			return nil, err
 		}
 		projects = append(projects, p)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating project rows: %w", err)
+		return nil, apperror.NewInternal("error iterating project rows", err)
 	}
 	return projects, nil
 }
@@ -97,7 +81,7 @@ func scanProjects(rows pgx.Rows) ([]*project.Project, error) {
 func (r *postgresProjectRepo) Save(ctx context.Context, p *project.Project) error {
 	mediaBytes, err := json.Marshal(p.Media)
 	if err != nil {
-		return fmt.Errorf("failed to marshal project media: %w", err)
+		return apperror.NewInternal("failed to marshal project media", err)
 	}
 
 	query := `
@@ -111,9 +95,9 @@ func (r *postgresProjectRepo) Save(ctx context.Context, p *project.Project) erro
 	)
 	if err != nil {
 		if pgErr, ok := err.(*pgconn.PgError); ok && pgErr.Code == "23505" {
-			return errors.New("project slug already exists")
+			return apperror.NewConflict("project", "slug", p.Slug)
 		}
-		return fmt.Errorf("failed to save project: %w", err)
+		return apperror.NewInternal("failed to save project", err)
 	}
 	return nil
 }
@@ -121,7 +105,7 @@ func (r *postgresProjectRepo) Save(ctx context.Context, p *project.Project) erro
 func (r *postgresProjectRepo) Update(ctx context.Context, p *project.Project) error {
 	mediaBytes, err := json.Marshal(p.Media)
 	if err != nil {
-		return fmt.Errorf("failed to marshal project media for update: %w", err)
+		return apperror.NewInternal("failed to marshal project media for update", err)
 	}
 
 	query := `
@@ -137,12 +121,12 @@ func (r *postgresProjectRepo) Update(ctx context.Context, p *project.Project) er
 	)
 	if err != nil {
 		if pgErr, ok := err.(*pgconn.PgError); ok && pgErr.Code == "23505" {
-			return errors.New("project slug already exists")
+			return apperror.NewConflict("project", "slug", p.Slug)
 		}
-		return fmt.Errorf("failed to update project: %w", err)
+		return apperror.NewInternal("failed to update project", err)
 	}
 	if cmdTag.RowsAffected() == 0 {
-		return project.ErrProjectNotFound
+		return apperror.NewNotFound("project", p.ID.String())
 	}
 	return nil
 }
@@ -151,10 +135,10 @@ func (r *postgresProjectRepo) Delete(ctx context.Context, id uuid.UUID, ownerID 
 	query := `DELETE FROM projects WHERE id = $1 AND owner_id = $2`
 	cmdTag, err := r.db.Exec(ctx, query, id, ownerID)
 	if err != nil {
-		return fmt.Errorf("failed to delete project: %w", err)
+		return apperror.NewInternal("failed to delete project", err)
 	}
 	if cmdTag.RowsAffected() == 0 {
-		return project.ErrProjectNotFound
+		return apperror.NewNotFound("project", id.String())
 	}
 	return nil
 }
@@ -166,7 +150,7 @@ func (r *postgresProjectRepo) FindByID(ctx context.Context, id uuid.UUID, ownerI
 		WHERE id = $1 AND owner_id = $2
 	`
 	row := r.db.QueryRow(ctx, query, id, ownerID)
-	return scanProject(row)
+	return scanProject(row, r.logger)
 }
 
 func (r *postgresProjectRepo) FindBySlug(ctx context.Context, slug string) (*project.Project, error) {
@@ -176,7 +160,7 @@ func (r *postgresProjectRepo) FindBySlug(ctx context.Context, slug string) (*pro
 		WHERE slug = $1
 	`
 	row := r.db.QueryRow(ctx, query, slug)
-	return scanProject(row)
+	return scanProject(row, r.logger)
 }
 
 func (r *postgresProjectRepo) FindPublicBySlug(ctx context.Context, slug string) (*project.Project, error) {
@@ -186,7 +170,7 @@ func (r *postgresProjectRepo) FindPublicBySlug(ctx context.Context, slug string)
 		WHERE slug = $1 AND is_public = true
 	`
 	row := r.db.QueryRow(ctx, query, slug)
-	return scanProject(row)
+	return scanProject(row, r.logger)
 }
 
 func (r *postgresProjectRepo) ListByOwner(ctx context.Context, ownerID uuid.UUID, limit, offset int) ([]*project.Project, error) {
@@ -199,15 +183,15 @@ func (r *postgresProjectRepo) ListByOwner(ctx context.Context, ownerID uuid.UUID
 
 	sql, args, err := builder.ToSql()
 	if err != nil {
-		return nil, fmt.Errorf("failed to build find by owner query: %w", err)
+		return nil, apperror.NewInternal("failed to build find by owner query", err)
 	}
 
 	rows, err := r.db.Query(ctx, sql, args...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query projects by owner: %w", err)
+		return nil, apperror.NewInternal("failed to query projects by owner", err)
 	}
 
-	return scanProjects(rows)
+	return scanProjects(rows, r.logger)
 }
 
 func (r *postgresProjectRepo) ListPublic(ctx context.Context, limit, offset int) ([]*project.Project, error) {
@@ -220,13 +204,13 @@ func (r *postgresProjectRepo) ListPublic(ctx context.Context, limit, offset int)
 
 	sql, args, err := builder.ToSql()
 	if err != nil {
-		return nil, fmt.Errorf("failed to build find public projects query: %w", err)
+		return nil, apperror.NewInternal("failed to build find public projects query", err)
 	}
 
 	rows, err := r.db.Query(ctx, sql, args...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query public projects: %w", err)
+		return nil, apperror.NewInternal("failed to query public projects", err)
 	}
 
-	return scanProjects(rows)
+	return scanProjects(rows, r.logger)
 }

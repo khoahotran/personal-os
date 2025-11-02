@@ -6,9 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
+	"os/signal"
 	"sync"
+	"syscall"
 
 	"github.com/segmentio/kafka-go"
+	"go.uber.org/zap"
 
 	"github.com/khoahotran/personal-os/adapters/event"
 	"github.com/khoahotran/personal-os/adapters/media_storage"
@@ -16,6 +20,7 @@ import (
 	mediaUC "github.com/khoahotran/personal-os/internal/application/usecase/media"
 	postUC "github.com/khoahotran/personal-os/internal/application/usecase/post"
 	"github.com/khoahotran/personal-os/internal/config"
+	"github.com/khoahotran/personal-os/pkg/logger"
 )
 
 func main() {
@@ -27,26 +32,30 @@ func main() {
 		log.Fatalf("FATAL: cannot load config: %v", err)
 	}
 
+	// Logger
+	appLogger := logger.NewZapLogger("development")
+	appLogger.Info("Worker Logger initialized")
+
 	// Database
-	dbPool, err := persistence.NewPostgresPool(cfg)
+	dbPool, err := persistence.NewPostgresPool(cfg, appLogger)
 	if err != nil {
-		log.Fatalf("FATAL: cannot connect Postgres: %v", err)
+		appLogger.Fatal("FATAL: cannot connect Postgres", err)
 	}
 	defer dbPool.Close()
 
 	// Cloudinary Uploader
-	uploader, err := media_storage.NewCloudinaryAdapter(cfg)
+	uploader, err := media_storage.NewCloudinaryAdapter(cfg, appLogger)
 	if err != nil {
-		log.Fatalf("FATAL: Failed to initialize uploader: %v", err)
+		appLogger.Fatal("FATAL: Failed to initialize uploader", err)
 	}
 
 	// Repositories
-	postRepo := persistence.NewPostgresPostRepo(dbPool)
-	mediaRepo := persistence.NewPostgresMediaRepo(dbPool)
+	postRepo := persistence.NewPostgresPostRepo(dbPool, appLogger)
+	mediaRepo := persistence.NewPostgresMediaRepo(dbPool, appLogger)
 
 	// Worker Use Case
-	processPostEventUC := postUC.NewProcessPostEventUseCase(postRepo, uploader)
-	processMediaEventUC := mediaUC.NewProcessMediaUseCase(mediaRepo, uploader)
+	processPostEventUC := postUC.NewProcessPostEventUseCase(postRepo, uploader, appLogger)
+	processMediaEventUC := mediaUC.NewProcessMediaUseCase(mediaRepo, uploader, appLogger)
 
 	// Kafka Consumer
 	postConsumer := kafka.NewReader(kafka.ReaderConfig{
@@ -77,83 +86,133 @@ func main() {
 
 	go func() {
 		defer wg.Done()
-		log.Printf(" Worker listening on topic '%s'...", event.TopicPostEvents)
+		appLogger.Info("Worker listening on topic", zap.String("topic", event.TopicPostEvents))
 
 		for {
 
 			select {
 			case <-ctx.Done():
-				log.Println("Stopping Post consumer...")
+				appLogger.Info("Stopping Post consumer...")
 				return
 			default:
 
 				msg, err := postConsumer.FetchMessage(ctx)
 				if err != nil {
 					if errors.Is(err, context.Canceled) {
-						break
+						return
 					}
-					log.Printf("ERROR: Failed to read message from %s: %v", event.TopicPostEvents, err)
+					appLogger.Error("Failed to read message", err, zap.String("topic", event.TopicPostEvents))
 					continue
 				}
 
-				log.Printf("Received POST event [Key: %s]", string(msg.Key))
+				appLogger.Info("Received message", zap.String("topic", msg.Topic), zap.String("key", string(msg.Key)))
 				var payload event.PostEventPayload
 				if err := json.Unmarshal(msg.Value, &payload); err != nil {
-					log.Printf("ERROR: Failed to unmarshal post event: %v. Skipping.", err)
-					commitMessage(postConsumer, msg)
+					appLogger.Error("Failed to unmarshal post event", err, zap.ByteString("value", msg.Value))
+					commitMessage(postConsumer, msg, appLogger)
 					continue
 				}
 
-				log.Printf("Processing event: [%s] for PostID: %s", payload.EventType, payload.PostID)
+				l := appLogger.With(zap.String("post_id", payload.PostID.String()), zap.String("event_type", string(payload.EventType)))
+				l.Info("Processing event")
 				if err := processPostEventUC.Execute(ctx, payload); err != nil {
-					log.Printf("ERROR: Failed to process post event for %s: %v", payload.PostID, err)
+					l.Error("Failed to process post event", err)
 					continue
 				}
-				commitMessage(postConsumer, msg)
+				commitMessage(postConsumer, msg, appLogger)
 			}
 		}
 	}()
 
 	go func() {
 		defer wg.Done()
-		log.Printf("Worker listening on topic '%s'...", event.TopicMediaEvents)
+		appLogger.Info("Worker listening on topic", zap.String("topic", event.TopicMediaEvents))
 		for {
 			select {
 			case <-ctx.Done():
-				log.Println("Stopping Media consumer...")
+				appLogger.Info("Stopping Media consumer...")
 				return
 			default:
 				msg, err := mediaConsumer.FetchMessage(ctx)
 				if err != nil {
 					if errors.Is(err, context.Canceled) {
-						break
+						return
 					}
-					log.Printf("ERROR: Failed to read message from %s: %v", event.TopicMediaEvents, err)
+					appLogger.Error("Failed to read message", err, zap.String("topic", event.TopicMediaEvents))
 					continue
 				}
 
-				log.Printf("📬 Received MEDIA event [Key: %s]", string(msg.Key))
+				appLogger.Info("Received message", zap.String("topic", msg.Topic), zap.String("key", string(msg.Key)))
 				var payload event.MediaEventPayload
 				if err := json.Unmarshal(msg.Value, &payload); err != nil {
-					log.Printf("ERROR: Failed to unmarshal media event: %v. Skipping.", err)
-					commitMessage(mediaConsumer, msg)
+					appLogger.Error("Failed to unmarshal media event", err, zap.ByteString("value", msg.Value))
+					commitMessage(mediaConsumer, msg, appLogger)
 					continue
 				}
 
-				log.Printf("⚙️ Processing event: [%s] for MediaID: %s", payload.EventType, payload.MediaID)
+				l := appLogger.With(zap.String("media_id", payload.MediaID.String()), zap.String("event_type", string(payload.EventType)))
+				l.Info("Processing event")
 				if err := processMediaEventUC.Execute(ctx, payload); err != nil {
-					log.Printf("ERROR: Failed to process media event for %s: %v", payload.MediaID, err)
+					l.Error("Failed to process media event", err)
 					continue
 				}
-				commitMessage(mediaConsumer, msg)
+				commitMessage(mediaConsumer, msg, appLogger)
 			}
 		}
 	}()
+
+	go func() {
+		defer wg.Done()
+		appLogger.Info("Worker listening on topic", zap.String("topic", event.TopicMediaEvents))
+		for {
+			select {
+			case <-ctx.Done():
+				appLogger.Info("Stopping Media consumer...")
+				return
+			default:
+				msg, err := mediaConsumer.FetchMessage(ctx)
+				if err != nil {
+					if errors.Is(err, context.Canceled) {
+						return
+					}
+					appLogger.Error("Failed to read message", err, zap.String("topic", event.TopicMediaEvents))
+					continue
+				}
+
+				appLogger.Info("Received message", zap.String("topic", msg.Topic), zap.String("key", string(msg.Key)))
+				var payload event.MediaEventPayload
+				if err := json.Unmarshal(msg.Value, &payload); err != nil {
+					appLogger.Error("Failed to unmarshal media event", err, zap.ByteString("value", msg.Value))
+					commitMessage(mediaConsumer, msg, appLogger)
+					continue
+				}
+
+				l := appLogger.With(zap.String("media_id", payload.MediaID.String()), zap.String("event_type", string(payload.EventType)))
+				l.Info("Processing event")
+				if err := processMediaEventUC.Execute(ctx, payload); err != nil {
+					l.Error("Failed to process media event", err)
+					continue
+				}
+				commitMessage(mediaConsumer, msg, appLogger)
+			}
+		}
+	}()
+
+	// Ctrl+C
+	sigterm := make(chan os.Signal, 1)
+	signal.Notify(sigterm, syscall.SIGINT, syscall.SIGTERM)
+	appLogger.Info("Worker started. Press Ctrl+C to exit.")
+	<-sigterm
+
+	// Shuting down
+	appLogger.Info("Shutting down workers...")
+	cancel()
 	wg.Wait()
+	appLogger.Info("All workers stopped.")
 }
 
-func commitMessage(consumer *kafka.Reader, msg kafka.Message) {
+func commitMessage(consumer *kafka.Reader, msg kafka.Message, log logger.Logger) {
 	if err := consumer.CommitMessages(context.Background(), msg); err != nil {
-		log.Printf("ERROR: Failed to commit message: %v", err)
+		log.Error("Failed to commit message", err, zap.String("topic", msg.Topic), zap.Int64("offset", msg.Offset))
 	}
 }

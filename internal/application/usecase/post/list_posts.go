@@ -2,23 +2,25 @@ package post
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/google/uuid"
 
 	"github.com/khoahotran/personal-os/internal/domain/post"
 	"github.com/khoahotran/personal-os/internal/domain/tag"
+	"github.com/khoahotran/personal-os/pkg/logger"
 )
 
 type ListPostsUseCase struct {
 	postRepo post.Repository
 	tagRepo  tag.Repository
+	logger   logger.Logger
 }
 
-func NewListPostsUseCase(pRepo post.Repository, tRepo tag.Repository) *ListPostsUseCase {
+func NewListPostsUseCase(pRepo post.Repository, tRepo tag.Repository, log logger.Logger) *ListPostsUseCase {
 	return &ListPostsUseCase{
 		postRepo: pRepo,
 		tagRepo:  tRepo,
+		logger:   log,
 	}
 }
 
@@ -44,10 +46,8 @@ func (uc *ListPostsUseCase) Execute(ctx context.Context, input ListPostsInput) (
 
 	posts, err := uc.postRepo.ListByOwner(ctx, input.OwnerID, input.Limit, offset)
 	if err != nil {
-		return nil, fmt.Errorf("get post list failed: %w", err)
+		return nil, err
 	}
-
-	// optimize N+1 query
 
 	return &ListPostsOutput{Posts: posts}, nil
 }

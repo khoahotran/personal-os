@@ -2,17 +2,19 @@ package project
 
 import (
 	"context"
-	"fmt"
+
 	"github.com/google/uuid"
 	"github.com/khoahotran/personal-os/internal/domain/project"
+	"github.com/khoahotran/personal-os/pkg/logger"
 )
 
 type ListProjectsUseCase struct {
 	projectRepo project.Repository
+	logger      logger.Logger
 }
 
-func NewListProjectsUseCase(pRepo project.Repository) *ListProjectsUseCase {
-	return &ListProjectsUseCase{projectRepo: pRepo}
+func NewListProjectsUseCase(pRepo project.Repository, log logger.Logger) *ListProjectsUseCase {
+	return &ListProjectsUseCase{projectRepo: pRepo, logger: log}
 }
 
 type ListProjectsInput struct {
@@ -35,17 +37,18 @@ func (uc *ListProjectsUseCase) Execute(ctx context.Context, input ListProjectsIn
 
 	projects, err := uc.projectRepo.ListByOwner(ctx, input.OwnerID, input.Limit, offset)
 	if err != nil {
-		return nil, fmt.Errorf("get list projects failed: %w", err)
+		return nil, err
 	}
 	return &ListProjectsOutput{Projects: projects}, nil
 }
 
 type ListPublicProjectsUseCase struct {
 	projectRepo project.Repository
+	logger      logger.Logger
 }
 
-func NewListPublicProjectsUseCase(pRepo project.Repository) *ListPublicProjectsUseCase {
-	return &ListPublicProjectsUseCase{projectRepo: pRepo}
+func NewListPublicProjectsUseCase(pRepo project.Repository, log logger.Logger) *ListPublicProjectsUseCase {
+	return &ListPublicProjectsUseCase{projectRepo: pRepo, logger: log}
 }
 
 type ListPublicProjectsInput struct {
@@ -67,7 +70,7 @@ func (uc *ListPublicProjectsUseCase) Execute(ctx context.Context, input ListPubl
 
 	projects, err := uc.projectRepo.ListPublic(ctx, input.Limit, offset)
 	if err != nil {
-		return nil, fmt.Errorf("get list public projects failed: %w", err)
+		return nil, err
 	}
 	return &ListPublicProjectsOutput{Projects: projects}, nil
 }

@@ -2,21 +2,23 @@ package post
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/khoahotran/personal-os/internal/domain/post"
 	"github.com/khoahotran/personal-os/internal/domain/tag"
+	"github.com/khoahotran/personal-os/pkg/logger"
 )
 
 type ListPublicPostsUseCase struct {
 	postRepo post.Repository
 	tagRepo  tag.Repository
+	logger   logger.Logger
 }
 
-func NewListPublicPostsUseCase(pRepo post.Repository, tRepo tag.Repository) *ListPublicPostsUseCase {
+func NewListPublicPostsUseCase(pRepo post.Repository, tRepo tag.Repository, log logger.Logger) *ListPublicPostsUseCase {
 	return &ListPublicPostsUseCase{
 		postRepo: pRepo,
 		tagRepo:  tRepo,
+		logger:   log,
 	}
 }
 
@@ -41,10 +43,8 @@ func (uc *ListPublicPostsUseCase) Execute(ctx context.Context, input ListPublicP
 
 	posts, err := uc.postRepo.ListPublic(ctx, input.Limit, offset)
 	if err != nil {
-		return nil, fmt.Errorf("get public post list failed: %w", err)
+		return nil, err
 	}
-
-	// optimize N+1 query
 
 	return &ListPublicPostsOutput{Posts: posts}, nil
 }

@@ -2,21 +2,25 @@ package persistence
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
-	"fmt"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.uber.org/zap"
 
 	"github.com/khoahotran/personal-os/internal/domain/user"
+	"github.com/khoahotran/personal-os/pkg/apperror"
+	"github.com/khoahotran/personal-os/pkg/logger"
 )
 
 type postgresUserRepo struct {
-	db *pgxpool.Pool
+	db     *pgxpool.Pool
+	logger logger.Logger
 }
 
-func NewPostgresUserRepo(db *pgxpool.Pool) user.Repository {
-	return &postgresUserRepo{db: db}
+func NewPostgresUserRepo(db *pgxpool.Pool, logger logger.Logger) user.Repository {
+	return &postgresUserRepo{db: db, logger: logger}
 }
 
 func (r *postgresUserRepo) FindByEmail(ctx context.Context, email string) (*user.User, error) {
@@ -38,9 +42,14 @@ func (r *postgresUserRepo) FindByEmail(ctx context.Context, email string) (*user
 
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, errors.New("user not exist")
+			return nil, apperror.NewUnauthorized("user not found", nil)
 		}
-		return nil, fmt.Errorf("error when query user: %w", err)
+		return nil, apperror.NewInternal("error querying user", err)
+	}
+
+	if err := json.Unmarshal(profileSettingsBytes, &u.ProfileSettings); err != nil {
+		r.logger.Warn("Failed to unmarshal profile_settings", zap.String("email", email), zap.Error(err))
+		u.ProfileSettings = map[string]any{}
 	}
 
 	return u, nil

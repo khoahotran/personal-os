@@ -2,19 +2,21 @@ package hobby
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/khoahotran/personal-os/internal/domain/hobby"
+	"github.com/khoahotran/personal-os/pkg/apperror"
+	"github.com/khoahotran/personal-os/pkg/logger"
 )
 
 type HobbyUseCase struct {
-	repo hobby.Repository
+	repo   hobby.Repository
+	logger logger.Logger
 }
 
-func NewHobbyUseCase(r hobby.Repository) *HobbyUseCase {
-	return &HobbyUseCase{repo: r}
+func NewHobbyUseCase(r hobby.Repository, log logger.Logger) *HobbyUseCase {
+	return &HobbyUseCase{repo: r, logger: log}
 }
 
 type CreateHobbyItemInput struct {
@@ -44,10 +46,10 @@ func (uc *HobbyUseCase) CreateHobbyItem(ctx context.Context, in CreateHobbyItemI
 		UpdatedAt: now,
 	}
 	if err := item.Validate(); err != nil {
-		return nil, err
+		return nil, apperror.NewInvalidInput("hobby item validation failed", err)
 	}
 	if err := uc.repo.Save(ctx, item); err != nil {
-		return nil, fmt.Errorf("failed to save hobby item: %w", err)
+		return nil, err
 	}
 	return item, nil
 }
@@ -79,10 +81,10 @@ func (uc *HobbyUseCase) UpdateHobbyItem(ctx context.Context, in UpdateHobbyItemI
 	item.IsPublic = in.IsPublic
 
 	if err := item.Validate(); err != nil {
-		return nil, err
+		return nil, apperror.NewInvalidInput("hobby item validation failed", err)
 	}
 	if err := uc.repo.Update(ctx, item); err != nil {
-		return nil, fmt.Errorf("failed to update hobby item: %w", err)
+		return nil, err
 	}
 	return item, nil
 }
