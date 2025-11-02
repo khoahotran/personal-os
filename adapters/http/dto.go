@@ -3,6 +3,7 @@ package http
 import (
 	"time"
 
+	"github.com/khoahotran/personal-os/internal/domain/media"
 	"github.com/khoahotran/personal-os/internal/domain/post"
 	"github.com/khoahotran/personal-os/internal/domain/profile"
 	"github.com/khoahotran/personal-os/internal/domain/project"
@@ -225,5 +226,33 @@ func ToProjectSummaryDTO(p *project.Project) ProjectSummaryDTO {
 		Stack:     p.Stack,
 		IsPublic:  p.IsPublic,
 		UpdatedAt: p.UpdatedAt,
+	}
+}
+
+// Media DTOs
+type MediaDTO struct {
+	ID           string         `json:"id"`
+	URL          string         `json:"url"`
+	ThumbnailURL *string        `json:"thumbnail_url,omitempty"`
+	Status       string         `json:"status"`
+	Metadata     map[string]any `json:"metadata"`
+	IsPublic     bool           `json:"is_public"`
+	CreatedAt    time.Time      `json:"created_at"`
+}
+
+type UpdateMediaRequest struct {
+	Metadata map[string]any `json:"metadata"`
+	IsPublic bool           `json:"is_public"`
+}
+
+func ToMediaDTO(m *media.Media) MediaDTO {
+	return MediaDTO{
+		ID:           m.ID.String(),
+		URL:          m.URL,
+		ThumbnailURL: m.ThumbnailURL,
+		Status:       string(m.Status),
+		Metadata:     m.Metadata,
+		IsPublic:     m.IsPublic,
+		CreatedAt:    m.CreatedAt,
 	}
 }

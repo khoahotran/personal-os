@@ -76,14 +76,20 @@ CREATE TABLE IF NOT EXISTS post_versions (
 );
 CREATE INDEX IF NOT EXISTS idx_post_versions_post_id ON post_versions(post_id);
 -- 6. MEDIA
-CREATE TABLE IF NOT EXISTS media (
+CREATE TABLE media (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     owner_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     provider VARCHAR(50) NOT NULL,
     url TEXT NOT NULL,
+    thumbnail_url TEXT,
+    status VARCHAR(20) NOT NULL DEFAULT 'pending',
     metadata JSONB DEFAULT '{}',
-    is_public BOOLEAN DEFAULT false NOT NULL
+    is_public BOOLEAN DEFAULT false NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+CREATE TRIGGER update_media_updated_at BEFORE
+UPDATE ON media FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
 -- 7. HOBBY_ITEMS
 CREATE TABLE IF NOT EXISTS hobby_items (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

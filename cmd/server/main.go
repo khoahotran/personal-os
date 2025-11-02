@@ -13,6 +13,7 @@ import (
 	"github.com/khoahotran/personal-os/adapters/media_storage"
 	"github.com/khoahotran/personal-os/adapters/persistence"
 	authUC "github.com/khoahotran/personal-os/internal/application/usecase/auth"
+	mediaUC "github.com/khoahotran/personal-os/internal/application/usecase/media"
 	postUC "github.com/khoahotran/personal-os/internal/application/usecase/post"
 	profileUC "github.com/khoahotran/personal-os/internal/application/usecase/profile"
 	projectUC "github.com/khoahotran/personal-os/internal/application/usecase/project"
@@ -54,6 +55,7 @@ func main() {
 	postRepo := persistence.NewPostgresPostRepo(dbPool)
 	tagRepo := persistence.NewPostgresTagRepo(dbPool)
 	projectRepo := persistence.NewPostgresProjectRepo(dbPool)
+	mediaRepo := persistence.NewPostgresMediaRepo(dbPool)
 
 	// Services
 	jwtSvc := auth.NewJWTService(cfg.Auth.JWTSecret, cfg.Auth.TokenLifespan)
@@ -82,6 +84,11 @@ func main() {
 	updateProjectUseCase := projectUC.NewUpdateProjectUseCase(projectRepo, tagRepo)
 	deleteProjectUseCase := projectUC.NewDeleteProjectUseCase(projectRepo, tagRepo)
 
+	uploadMediaUseCase := mediaUC.NewUploadMediaUseCase(mediaRepo, uploader, kafkaClient)
+	listPublicMediaUseCase := mediaUC.NewListPublicMediaUseCase(mediaRepo)
+	updateMediaUseCase := mediaUC.NewUpdateMediaUseCase(mediaRepo)
+	deleteMediaUseCase := mediaUC.NewDeleteMediaUseCase(mediaRepo, uploader)
+
 	// HTTP Handlers
 	authHandler := httpAdapter.NewAuthHandler(loginUseCase)
 	profileHandler := httpAdapter.NewProfileHandler(profileUseCase)
@@ -98,6 +105,13 @@ func main() {
 	projectHandler := httpAdapter.NewProjectHandler(
 		createProjectUseCase, listProjectsUseCase, listPublicProjectsUseCase,
 		getProjectUseCase, getPublicProjectUseCase, updateProjectUseCase, deleteProjectUseCase,
+	)
+
+	mediaHandler := httpAdapter.NewMediaHandler(
+		uploadMediaUseCase,
+		listPublicMediaUseCase,
+		updateMediaUseCase,
+		deleteMediaUseCase,
 	)
 
 	// Middleware
@@ -153,6 +167,13 @@ func main() {
 					projects.PUT("/:id", projectHandler.UpdateProject)
 					projects.DELETE("/:id", projectHandler.DeleteProject)
 				}
+
+				media := adminPrivate.Group("/media")
+				{
+					media.POST("/upload", mediaHandler.UploadMedia)
+					media.PUT("/:id", mediaHandler.UpdateMedia)
+					media.DELETE("/:id", mediaHandler.DeleteMedia)
+				}
 			}
 		}
 
@@ -165,6 +186,8 @@ func main() {
 
 			public.GET("/projects", projectHandler.ListPublicProjects)
 			public.GET("/projects/:slug", projectHandler.GetPublicProject)
+
+			public.GET("/media", mediaHandler.ListPublicMedia)
 		}
 	}
 

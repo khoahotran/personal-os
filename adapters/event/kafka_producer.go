@@ -32,6 +32,22 @@ type PostEventPayload struct {
 	OwnerID   uuid.UUID     `json:"owner_id"`
 }
 
+type MediaEventType string
+
+const (
+	MediaEventTypeUploaded MediaEventType = "media.uploaded"
+	MediaEventTypeDeleted  MediaEventType = "media.deleted"
+)
+
+type MediaEventPayload struct {
+	EventType        MediaEventType `json:"event_type"`
+	MediaID          uuid.UUID      `json:"media_id"`
+	OwnerID          uuid.UUID      `json:"owner_id"`
+	Provider         string         `json:"provider"`
+	OriginalURL      string         `json:"original_url"`
+	OriginalPublicID string         `json:"original_public_id"`
+}
+
 type KafkaProducerClient struct {
 	PostEventsWriter  *kafka.Writer
 	MediaEventsWriter *kafka.Writer
@@ -79,6 +95,26 @@ func (c *KafkaProducerClient) PublishPostEvent(ctx context.Context, payload Post
 		log.Printf("Kafka Write failed: %v", err)
 	} else {
 		log.Printf("Sent event to Kafka: %s for PostID: %s", payload.EventType, payload.PostID)
+	}
+	return err
+}
+
+func (c *KafkaProducerClient) PublishMediaEvent(ctx context.Context, payload MediaEventPayload) error {
+	msgBody, err := json.Marshal(payload)
+	if err != nil {
+		log.Printf("ERROR Kafka Marshal (Media): %v", err)
+		return err
+	}
+
+	err = c.MediaEventsWriter.WriteMessages(ctx, kafka.Message{
+		Key:   []byte(payload.MediaID.String()),
+		Value: msgBody,
+	})
+
+	if err != nil {
+		log.Printf("ERROR Kafka Write (Media): %v", err)
+	} else {
+		log.Printf("Send event to Kafka: %s for MediaID: %s", payload.EventType, payload.MediaID)
 	}
 	return err
 }

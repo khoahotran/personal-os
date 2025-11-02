@@ -64,9 +64,6 @@ func (uc *ProcessPostEventUseCase) Execute(ctx context.Context, payload event.Po
 		return fmt.Errorf("build Thumbnail URL failed: %w", err)
 	}
 
-	log.Printf("OG Image: %s", ogImageURL)
-	log.Printf("Thumbnail: %s", thumbURL)
-
 	requestedStatusStr, _ := p.Metadata["requested_status"].(string)
 	if requestedStatusStr == "" {
 		fmt.Printf("request status violate: %s, fallback to draft\n", requestedStatusStr)
