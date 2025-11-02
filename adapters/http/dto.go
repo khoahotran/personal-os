@@ -5,9 +5,11 @@ import (
 
 	"github.com/khoahotran/personal-os/internal/domain/post"
 	"github.com/khoahotran/personal-os/internal/domain/profile"
+	"github.com/khoahotran/personal-os/internal/domain/project"
 	"github.com/khoahotran/personal-os/internal/domain/tag"
 )
 
+// Profile DTOs
 type CareerMilestoneDTO struct {
 	Date        time.Time `json:"date"`
 	Title       string    `json:"title"`
@@ -58,6 +60,8 @@ func (req *UpdateProfileRequest) ToDomainMilestones() []profile.CareerMilestone 
 	}
 	return domainMilestones
 }
+
+// Post DTOs
 
 type CreatePostRequest struct {
 	Title   string   `json:"title" binding:"required"`
@@ -132,5 +136,94 @@ func ToPostDTO(p *post.Post, tags []tag.Tag) PostDTO {
 		CreatedAt:       p.CreatedAt,
 		UpdatedAt:       p.UpdatedAt,
 		Tags:            tagNames,
+	}
+}
+
+// Project DTOs
+
+type CreateProjectRequest struct {
+	Title         string   `json:"title" binding:"required"`
+	Slug          string   `json:"slug"`
+	Description   string   `json:"description"`
+	Stack         []string `json:"stack"`
+	RepositoryURL *string  `json:"repository_url"`
+	LiveURL       *string  `json:"live_url"`
+	IsPublic      bool     `json:"is_public"`
+	TagNames      []string `json:"tags"`
+}
+
+type ProjectMediaDTO struct {
+	Type string `json:"type"`
+	URL  string `json:"url"`
+	Alt  string `json:"alt"`
+}
+
+type ProjectSummaryDTO struct {
+	ID        string    `json:"id"`
+	Slug      string    `json:"slug"`
+	Title     string    `json:"title"`
+	Stack     []string  `json:"stack"`
+	IsPublic  bool      `json:"is_public"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+type ProjectDTO struct {
+	ID            string            `json:"id"`
+	Slug          string            `json:"slug"`
+	Title         string            `json:"title"`
+	Description   string            `json:"description"`
+	Stack         []string          `json:"stack"`
+	RepositoryURL *string           `json:"repository_url"`
+	LiveURL       *string           `json:"live_url"`
+	Media         []ProjectMediaDTO `json:"media"`
+	IsPublic      bool              `json:"is_public"`
+	UpdatedAt     time.Time         `json:"updated_at"`
+	Tags          []string          `json:"tags"`
+}
+
+type UpdateProjectRequest struct {
+	Title         string   `json:"title" binding:"required"`
+	Slug          string   `json:"slug" binding:"required"`
+	Description   string   `json:"description"`
+	Stack         []string `json:"stack"`
+	RepositoryURL *string  `json:"repository_url"`
+	LiveURL       *string  `json:"live_url"`
+	IsPublic      bool     `json:"is_public"`
+	TagNames      []string `json:"tags"`
+}
+
+func ToProjectDTO(p *project.Project, tags []tag.Tag) ProjectDTO {
+	tagNames := make([]string, len(tags))
+	for i, t := range tags {
+		tagNames[i] = t.Name
+	}
+	mediaDTOs := make([]ProjectMediaDTO, len(p.Media))
+	for i, m := range p.Media {
+		mediaDTOs[i] = ProjectMediaDTO(m)
+	}
+
+	return ProjectDTO{
+		ID:            p.ID.String(),
+		Slug:          p.Slug,
+		Title:         p.Title,
+		Description:   p.Description,
+		Stack:         p.Stack,
+		RepositoryURL: p.RepositoryURL,
+		LiveURL:       p.LiveURL,
+		Media:         mediaDTOs,
+		IsPublic:      p.IsPublic,
+		UpdatedAt:     p.UpdatedAt,
+		Tags:          tagNames,
+	}
+}
+
+func ToProjectSummaryDTO(p *project.Project) ProjectSummaryDTO {
+	return ProjectSummaryDTO{
+		ID:        p.ID.String(),
+		Slug:      p.Slug,
+		Title:     p.Title,
+		Stack:     p.Stack,
+		IsPublic:  p.IsPublic,
+		UpdatedAt: p.UpdatedAt,
 	}
 }

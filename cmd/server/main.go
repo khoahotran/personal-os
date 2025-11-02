@@ -15,6 +15,7 @@ import (
 	authUC "github.com/khoahotran/personal-os/internal/application/usecase/auth"
 	postUC "github.com/khoahotran/personal-os/internal/application/usecase/post"
 	profileUC "github.com/khoahotran/personal-os/internal/application/usecase/profile"
+	projectUC "github.com/khoahotran/personal-os/internal/application/usecase/project"
 	"github.com/khoahotran/personal-os/internal/config"
 	"github.com/khoahotran/personal-os/pkg/auth"
 )
@@ -52,6 +53,7 @@ func main() {
 	profileRepo := persistence.NewPostgresProfileRepo(dbPool)
 	postRepo := persistence.NewPostgresPostRepo(dbPool)
 	tagRepo := persistence.NewPostgresTagRepo(dbPool)
+	projectRepo := persistence.NewPostgresProjectRepo(dbPool)
 
 	// Services
 	jwtSvc := auth.NewJWTService(cfg.Auth.JWTSecret, cfg.Auth.TokenLifespan)
@@ -63,6 +65,7 @@ func main() {
 	// Use Cases
 	loginUseCase := authUC.NewLoginUseCase(userRepo, jwtSvc)
 	profileUseCase := profileUC.NewProfileUseCase(profileRepo)
+
 	createPostUseCase := postUC.NewCreatePostUseCase(postRepo, tagRepo, kafkaClient, uploader)
 	listPostsUseCase := postUC.NewListPostsUseCase(postRepo, tagRepo)
 	listPublicPostsUseCase := postUC.NewListPublicPostsUseCase(postRepo, tagRepo)
@@ -70,6 +73,14 @@ func main() {
 	deletePostUseCase := postUC.NewDeletePostUseCase(postRepo, tagRepo, kafkaClient)
 	getPostUseCase := postUC.NewGetPostUseCase(postRepo, tagRepo)
 	getPublicPostUseCase := postUC.NewGetPublicPostUseCase(postRepo, tagRepo)
+
+	createProjectUseCase := projectUC.NewCreateProjectUseCase(projectRepo, tagRepo)
+	listProjectsUseCase := projectUC.NewListProjectsUseCase(projectRepo)
+	listPublicProjectsUseCase := projectUC.NewListPublicProjectsUseCase(projectRepo)
+	getProjectUseCase := projectUC.NewGetProjectUseCase(projectRepo, tagRepo)
+	getPublicProjectUseCase := projectUC.NewGetPublicProjectUseCase(projectRepo, tagRepo)
+	updateProjectUseCase := projectUC.NewUpdateProjectUseCase(projectRepo, tagRepo)
+	deleteProjectUseCase := projectUC.NewDeleteProjectUseCase(projectRepo, tagRepo)
 
 	// HTTP Handlers
 	authHandler := httpAdapter.NewAuthHandler(loginUseCase)
@@ -82,6 +93,11 @@ func main() {
 		deletePostUseCase,
 		getPostUseCase,
 		getPublicPostUseCase,
+	)
+
+	projectHandler := httpAdapter.NewProjectHandler(
+		createProjectUseCase, listProjectsUseCase, listPublicProjectsUseCase,
+		getProjectUseCase, getPublicProjectUseCase, updateProjectUseCase, deleteProjectUseCase,
 	)
 
 	// Middleware
@@ -128,15 +144,27 @@ func main() {
 					posts.DELETE("/:id", postHandler.DeletePost)
 					posts.GET("/:id", postHandler.GetPost)
 				}
+
+				projects := adminPrivate.Group("/projects")
+				{
+					projects.POST("", projectHandler.CreateProject)
+					projects.GET("", projectHandler.ListProjects)
+					projects.GET("/:id", projectHandler.GetProject)
+					projects.PUT("/:id", projectHandler.UpdateProject)
+					projects.DELETE("/:id", projectHandler.DeleteProject)
+				}
 			}
 		}
 
 		public := api.Group("/")
 		{
 			public.GET("/health", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"status": "UP"}) })
+
 			public.GET("/posts", postHandler.ListPublicPosts)
 			public.GET("/posts/:slug", postHandler.GetPublicPost)
 
+			public.GET("/projects", projectHandler.ListPublicProjects)
+			public.GET("/projects/:slug", projectHandler.GetPublicProject)
 		}
 	}
 
