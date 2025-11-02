@@ -3,6 +3,7 @@ package http
 import (
 	"time"
 
+	"github.com/khoahotran/personal-os/internal/domain/hobby"
 	"github.com/khoahotran/personal-os/internal/domain/media"
 	"github.com/khoahotran/personal-os/internal/domain/post"
 	"github.com/khoahotran/personal-os/internal/domain/profile"
@@ -254,5 +255,43 @@ func ToMediaDTO(m *media.Media) MediaDTO {
 		Metadata:     m.Metadata,
 		IsPublic:     m.IsPublic,
 		CreatedAt:    m.CreatedAt,
+	}
+}
+
+// Hobby DTOs
+
+type HobbyItemDTO struct {
+	ID        string         `json:"id"`
+	Category  string         `json:"category"`
+	Title     string         `json:"title"`
+	Status    string         `json:"status"`
+	Rating    int            `json:"rating"`
+	Notes     string         `json:"notes"`
+	Metadata  map[string]any `json:"metadata"`
+	IsPublic  bool           `json:"is_public"`
+	UpdatedAt time.Time      `json:"updated_at"`
+}
+
+type CreateOrUpdateHobbyItemRequest struct {
+	Category string         `json:"category" binding:"required"`
+	Title    string         `json:"title" binding:"required"`
+	Status   string         `json:"status"`
+	Rating   int            `json:"rating" binding:"min=0,max=10"`
+	Notes    string         `json:"notes"`
+	Metadata map[string]any `json:"metadata"`
+	IsPublic bool           `json:"is_public"`
+}
+
+func ToHobbyItemDTO(hi *hobby.HobbyItem) HobbyItemDTO {
+	return HobbyItemDTO{
+		ID:        hi.ID.String(),
+		Category:  hi.Category,
+		Title:     hi.Title,
+		Status:    hi.Status,
+		Rating:    hi.Rating,
+		Notes:     hi.Notes,
+		Metadata:  hi.Metadata,
+		IsPublic:  hi.IsPublic,
+		UpdatedAt: hi.UpdatedAt,
 	}
 }

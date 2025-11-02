@@ -13,6 +13,7 @@ import (
 	"github.com/khoahotran/personal-os/adapters/media_storage"
 	"github.com/khoahotran/personal-os/adapters/persistence"
 	authUC "github.com/khoahotran/personal-os/internal/application/usecase/auth"
+	hobbyUC "github.com/khoahotran/personal-os/internal/application/usecase/hobby"
 	mediaUC "github.com/khoahotran/personal-os/internal/application/usecase/media"
 	postUC "github.com/khoahotran/personal-os/internal/application/usecase/post"
 	profileUC "github.com/khoahotran/personal-os/internal/application/usecase/profile"
@@ -56,6 +57,7 @@ func main() {
 	tagRepo := persistence.NewPostgresTagRepo(dbPool)
 	projectRepo := persistence.NewPostgresProjectRepo(dbPool)
 	mediaRepo := persistence.NewPostgresMediaRepo(dbPool)
+	hobbyRepo := persistence.NewPostgresHobbyRepo(dbPool)
 
 	// Services
 	jwtSvc := auth.NewJWTService(cfg.Auth.JWTSecret, cfg.Auth.TokenLifespan)
@@ -89,6 +91,8 @@ func main() {
 	updateMediaUseCase := mediaUC.NewUpdateMediaUseCase(mediaRepo)
 	deleteMediaUseCase := mediaUC.NewDeleteMediaUseCase(mediaRepo, uploader)
 
+	hobbyUseCase := hobbyUC.NewHobbyUseCase(hobbyRepo)
+
 	// HTTP Handlers
 	authHandler := httpAdapter.NewAuthHandler(loginUseCase)
 	profileHandler := httpAdapter.NewProfileHandler(profileUseCase)
@@ -101,6 +105,7 @@ func main() {
 		getPostUseCase,
 		getPublicPostUseCase,
 	)
+	hobbyHandler := httpAdapter.NewHobbyHandler(hobbyUseCase)
 
 	projectHandler := httpAdapter.NewProjectHandler(
 		createProjectUseCase, listProjectsUseCase, listPublicProjectsUseCase,
@@ -174,6 +179,15 @@ func main() {
 					media.PUT("/:id", mediaHandler.UpdateMedia)
 					media.DELETE("/:id", mediaHandler.DeleteMedia)
 				}
+
+				hobbies := adminPrivate.Group("/hobbies")
+				{
+					hobbies.POST("", hobbyHandler.CreateHobbyItem)
+					hobbies.GET("", hobbyHandler.ListHobbyItems)
+					hobbies.GET("/:id", hobbyHandler.GetHobbyItem)
+					hobbies.PUT("/:id", hobbyHandler.UpdateHobbyItem)
+					hobbies.DELETE("/:id", hobbyHandler.DeleteHobbyItem)
+				}
 			}
 		}
 
@@ -188,6 +202,8 @@ func main() {
 			public.GET("/projects/:slug", projectHandler.GetPublicProject)
 
 			public.GET("/media", mediaHandler.ListPublicMedia)
+
+			public.GET("/hobbies", hobbyHandler.ListPublicHobbyItems)
 		}
 	}
 
