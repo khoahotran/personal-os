@@ -45,7 +45,7 @@ type UploadMediaOutput struct {
 func (uc *UploadMediaUseCase) Execute(ctx context.Context, input UploadMediaInput) (*UploadMediaOutput, error) {
 	mediaID := uuid.New()
 
-	originalFolder := fmt.Sprintf("users/%s/media/originals", input.OwnerID.String())
+	originalFolder := fmt.Sprintf("users/%s/media/originals/", input.OwnerID.String())
 	originalPublicID := mediaID.String()
 
 	originalURL, err := uc.uploader.Upload(ctx, input.File, originalFolder, originalPublicID)

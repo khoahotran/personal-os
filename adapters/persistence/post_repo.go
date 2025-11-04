@@ -17,6 +17,7 @@ import (
 	"github.com/khoahotran/personal-os/internal/domain/post"
 	"github.com/khoahotran/personal-os/pkg/apperror"
 	"github.com/khoahotran/personal-os/pkg/logger"
+	"github.com/pgvector/pgvector-go"
 )
 
 type postgresPostRepo struct {
@@ -33,7 +34,9 @@ var psql = sq.StatementBuilder.PlaceholderFormat(sq.Dollar)
 func scanPost(row pgx.Row, l logger.Logger) (*post.Post, error) {
 	p := &post.Post{}
 	var historyBytes, metadataBytes []byte
-	var ogImageURL, thumbnailURL, publishedAt sql.NullString
+	var ogImageURL, thumbnailURL sql.NullString
+	var publishedAt sql.NullTime
+	var embedding pgvector.Vector
 
 	err := row.Scan(
 		&p.ID,
@@ -46,6 +49,7 @@ func scanPost(row pgx.Row, l logger.Logger) (*post.Post, error) {
 		&thumbnailURL,
 		&metadataBytes,
 		&historyBytes,
+		&embedding,
 		&publishedAt,
 		&p.CreatedAt,
 		&p.UpdatedAt,
@@ -66,10 +70,9 @@ func scanPost(row pgx.Row, l logger.Logger) (*post.Post, error) {
 	}
 
 	if publishedAt.Valid {
-		if t, err := time.Parse(time.RFC3339, publishedAt.String); err == nil {
-			p.PublishedAt = &t
-		}
+		p.PublishedAt = &publishedAt.Time
 	}
+	p.Embedding = embedding
 
 	if err := json.Unmarshal(historyBytes, &p.VersionHistory); err != nil {
 		l.Warn("Failed to unmarshal post version_history", zap.String("post_id", p.ID.String()), zap.Error(err))
@@ -117,12 +120,12 @@ func (r *postgresPostRepo) Save(ctx context.Context, p *post.Post) error {
 	}
 
 	query := `
-		INSERT INTO posts (id, owner_id, slug, title, content_markdown, status, version_history, metadata, published_at, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		INSERT INTO posts (id, owner_id, slug, title, content_markdown, status, metadata, version_history, embedding, published_at, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 	`
 	_, err = r.db.Exec(ctx, query,
 		p.ID, p.OwnerID, p.Slug, p.Title, p.ContentMarkdown, p.Status,
-		historyBytes, metadataBytes, p.PublishedAt, p.CreatedAt, p.UpdatedAt,
+		metadataBytes, historyBytes, p.Embedding, p.PublishedAt, p.CreatedAt, p.UpdatedAt,
 	)
 	if err != nil {
 		if pgErr, ok := err.(*pgconn.PgError); ok && pgErr.Code == "23505" {
@@ -151,13 +154,14 @@ func (r *postgresPostRepo) Update(ctx context.Context, p *post.Post) error {
 	query := `
 		UPDATE posts SET
 			slug = $2, title = $3, content_markdown = $4, status = $5, 
-			version_history = $6, metadata = $7, published_at = $8, og_image_url = $9, 
+			version_history = $6, metadata = $7, published_at = $8, og_image_url = $9, thumbnail_url = $10, 
+			embedding = $11,
 			updated_at = NOW()
-		WHERE id = $1 AND owner_id = $10
+		WHERE id = $1 AND owner_id = $12
 	`
 	cmdTag, err := r.db.Exec(ctx, query,
 		p.ID, p.Slug, p.Title, p.ContentMarkdown, p.Status,
-		historyBytes, metadataBytes, p.PublishedAt, p.OgImageURL, p.OwnerID,
+		historyBytes, metadataBytes, p.PublishedAt, p.OgImageURL, p.ThumbnailURL, p.Embedding, p.OwnerID,
 	)
 	if err != nil {
 		if pgErr, ok := err.(*pgconn.PgError); ok && pgErr.Code == "23505" {
@@ -184,19 +188,19 @@ func (r *postgresPostRepo) Delete(ctx context.Context, id uuid.UUID, ownerID uui
 }
 
 func (r *postgresPostRepo) FindByID(ctx context.Context, id uuid.UUID, ownerID uuid.UUID) (*post.Post, error) {
-	query := `SELECT * FROM posts WHERE id = $1 AND owner_id = $2`
+	query := `SELECT id, owner_id, slug, title, content_markdown, status, og_image_url, thumbnail_url, metadata, version_history, embedding, published_at, created_at, updated_at FROM posts WHERE id = $1 AND owner_id = $2`
 	row := r.db.QueryRow(ctx, query, id, ownerID)
 	return scanPost(row, r.logger)
 }
 
 func (r *postgresPostRepo) FindBySlug(ctx context.Context, slug string) (*post.Post, error) {
-	query := `SELECT * FROM posts WHERE slug = $1`
+	query := `SELECT id, owner_id, slug, title, content_markdown, status, og_image_url, thumbnail_url, metadata, version_history, embedding, published_at, created_at, updated_at FROM posts WHERE slug = $1`
 	row := r.db.QueryRow(ctx, query, slug)
 	return scanPost(row, r.logger)
 }
 
 func (r *postgresPostRepo) FindPublicBySlug(ctx context.Context, slug string) (*post.Post, error) {
-	query := `SELECT * FROM posts WHERE slug = $1 AND status = $2`
+	query := `SELECT id, owner_id, slug, title, content_markdown, status, og_image_url, thumbnail_url, metadata, version_history, embedding, published_at, created_at, updated_at FROM posts WHERE slug = $1 AND status = $2`
 	row := r.db.QueryRow(ctx, query, slug, post.StatusPublic)
 	return scanPost(row, r.logger)
 }

@@ -15,11 +15,12 @@ import (
 type ProcessPostEventUseCase struct {
 	postRepo post.Repository
 	uploader service.Uploader
+	embedder service.EmbeddingService
 	logger   logger.Logger
 }
 
-func NewProcessPostEventUseCase(pr post.Repository, up service.Uploader, log logger.Logger) *ProcessPostEventUseCase {
-	return &ProcessPostEventUseCase{postRepo: pr, uploader: up, logger: log}
+func NewProcessPostEventUseCase(pr post.Repository, up service.Uploader, em service.EmbeddingService, log logger.Logger) *ProcessPostEventUseCase {
+	return &ProcessPostEventUseCase{postRepo: pr, uploader: up, embedder: em, logger: log}
 }
 
 func (uc *ProcessPostEventUseCase) Execute(ctx context.Context, payload event.PostEventPayload) error {
@@ -45,6 +46,7 @@ func (uc *ProcessPostEventUseCase) Execute(ctx context.Context, payload event.Po
 	}
 
 	originalPublicID, ok := p.Metadata["original_public_id"].(string)
+	l.Info("[DEBUG]: ", zap.String("original_public_id", originalPublicID))
 	if !ok || originalPublicID == "" {
 		return apperror.NewInvalidInput("original_public_id not found in metadata", nil)
 	}
@@ -69,12 +71,24 @@ func (uc *ProcessPostEventUseCase) Execute(ctx context.Context, payload event.Po
 		return apperror.NewInternal("failed to build Thumbnail URL", err)
 	}
 
+	if payload.EventType == event.PostEventTypeCreated || payload.EventType == event.PostEventTypeUpdated {
+		l.Info("Generating embeddings for post content...")
+		embedding, err := uc.embedder.GenerateEmbeddings(ctx, p.ContentMarkdown)
+		if err != nil {
+			return apperror.NewInternal("failed to generate embeddings", err)
+		}
+		p.Embedding = embedding
+		l.Info("Embeddings generated successfully")
+	}
+
 	requestedStatusStr, _ := p.Metadata["requested_status"].(string)
 	if requestedStatusStr == "" {
 		l.Warn("request status violate: %s, fallback to draft\n", zap.String("request_status", requestedStatusStr))
 		requestedStatusStr = string(post.StatusDraft)
 	}
 	p.Status = post.PostStatus(requestedStatusStr)
+	l.Info("[DEBUG]: ", zap.String("ogImageURL", ogImageURL))
+	l.Info("[DEBUG]: ", zap.String("thumbURL", thumbURL))
 
 	p.MarkAsReady(ogImageURL, thumbURL)
 

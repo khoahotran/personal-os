@@ -14,6 +14,7 @@ import (
 	"github.com/segmentio/kafka-go"
 	"go.uber.org/zap"
 
+	"github.com/khoahotran/personal-os/adapters/embedding"
 	"github.com/khoahotran/personal-os/adapters/event"
 	"github.com/khoahotran/personal-os/adapters/media_storage"
 	"github.com/khoahotran/personal-os/adapters/persistence"
@@ -36,6 +37,12 @@ func main() {
 	appLogger := logger.NewZapLogger("development")
 	appLogger.Info("Worker Logger initialized")
 
+	// Embedding Service
+	embedder, err := embedding.NewOllamaAdapter(cfg, appLogger)
+	if err != nil {
+		appLogger.Fatal("FATAL: Failed to initialize Ollama adapter", err)
+	}
+
 	// Database
 	dbPool, err := persistence.NewPostgresPool(cfg, appLogger)
 	if err != nil {
@@ -54,7 +61,7 @@ func main() {
 	mediaRepo := persistence.NewPostgresMediaRepo(dbPool, appLogger)
 
 	// Worker Use Case
-	processPostEventUC := postUC.NewProcessPostEventUseCase(postRepo, uploader, appLogger)
+	processPostEventUC := postUC.NewProcessPostEventUseCase(postRepo, uploader, embedder, appLogger)
 	processMediaEventUC := mediaUC.NewProcessMediaUseCase(mediaRepo, uploader, appLogger)
 
 	// Kafka Consumer

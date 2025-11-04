@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/pgvector/pgvector-go"
 	"github.com/google/uuid"
 )
 
@@ -25,19 +26,20 @@ type PostVersion struct {
 	CreatedAt   time.Time `json:"created_at"`
 }
 type Post struct {
-	ID              uuid.UUID      `json:"id"`
-	OwnerID         uuid.UUID      `json:"owner_id"`
-	Slug            string         `json:"slug"`
-	Title           string         `json:"title"`
-	ContentMarkdown string         `json:"content_markdown"`
-	Status          PostStatus     `json:"status"`
-	OgImageURL      *string        `json:"og_image_url"`
-	ThumbnailURL    *string        `json:"thumbnail_url"`
-	VersionHistory  []PostVersion  `json:"version_history"`
-	Metadata        map[string]any `json:"metadata"`
-	PublishedAt     *time.Time     `json:"published_at"`
-	CreatedAt       time.Time      `json:"created_at"`
-	UpdatedAt       time.Time      `json:"updated_at"`
+	ID              uuid.UUID       `json:"id"`
+	OwnerID         uuid.UUID       `json:"owner_id"`
+	Slug            string          `json:"slug"`
+	Title           string          `json:"title"`
+	ContentMarkdown string          `json:"content_markdown"`
+	Status          PostStatus      `json:"status"`
+	OgImageURL      *string         `json:"og_image_url"`
+	ThumbnailURL    *string         `json:"thumbnail_url"`
+	VersionHistory  []PostVersion   `json:"version_history"`
+	Metadata        map[string]any  `json:"metadata"`
+	Embedding       pgvector.Vector `json:"-"`
+	PublishedAt     *time.Time      `json:"published_at"`
+	CreatedAt       time.Time       `json:"created_at"`
+	UpdatedAt       time.Time       `json:"updated_at"`
 }
 
 var (

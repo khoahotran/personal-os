@@ -1,7 +1,7 @@
 services:
   # PostgreSQL (Database)
   postgres:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     container_name: personal-os-db
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
@@ -57,6 +57,21 @@ services:
       timeout: 10s
       retries: 5
 
+  ollama:
+    image: ollama/ollama:latest
+    container_name: personal-os-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: [ "CMD-SHELL", "ollama list || exit 1" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
 volumes:
   postgres_data:
   kafka_data:
+  ollama_data:

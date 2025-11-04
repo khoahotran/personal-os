@@ -33,6 +33,9 @@ type Config struct {
 		ApiKey    string `mapstructure:"api_key"`
 		ApiSecret string `mapstructure:"api_secret"`
 	} `mapstructure:"cloudinary"`
+	Ollama struct {
+		Host string `mapstructure:"host"`
+	} `mapstructure:"ollama"`
 }
 
 func LoadConfig(paths ...string) (cfg Config, err error) {
@@ -70,6 +73,8 @@ func LoadConfig(paths ...string) (cfg Config, err error) {
 	viper.BindEnv("cloudinary.cloud_name", "CLOUDINARY_CLOUD_NAME")
 	viper.BindEnv("cloudinary.api_key", "CLOUDINARY_API_KEY")
 	viper.BindEnv("cloudinary.api_secret", "CLOUDINARY_API_SECRET")
+
+	viper.BindEnv("ollama.host", "OLLAMA_HOST")
 
 	err = viper.Unmarshal(&cfg)
 	return

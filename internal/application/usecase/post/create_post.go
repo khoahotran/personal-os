@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/pgvector/pgvector-go"
 	"go.uber.org/zap"
 
 	"github.com/khoahotran/personal-os/adapters/event"
@@ -75,13 +76,14 @@ func (uc *CreatePostUseCase) Execute(ctx context.Context, input CreatePostInput)
 		VersionHistory:  []post.PostVersion{},
 		CreatedAt:       now,
 		UpdatedAt:       now,
+		Embedding:       pgvector.NewVector(make([]float32, 768)),
 	}
 
 	if err := newPost.Validate(); err != nil {
 		return nil, apperror.NewInvalidInput("validation failed", err)
 	}
 
-	originalFolder := fmt.Sprintf("users/%s/originals", input.OwnerID.String())
+	originalFolder := fmt.Sprintf("users/%s/originals/", input.OwnerID.String())
 	originalPublicID := newPost.ID.String()
 
 	originalURL, err := uc.uploader.Upload(ctx, input.File, originalFolder, originalPublicID)
