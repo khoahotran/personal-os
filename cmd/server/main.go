@@ -8,11 +8,14 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/khoahotran/personal-os/adapters/embedding"
 	"github.com/khoahotran/personal-os/adapters/event"
 	httpAdapter "github.com/khoahotran/personal-os/adapters/http"
+	"github.com/khoahotran/personal-os/adapters/llm"
 	"github.com/khoahotran/personal-os/adapters/media_storage"
 	"github.com/khoahotran/personal-os/adapters/persistence"
 	authUC "github.com/khoahotran/personal-os/internal/application/usecase/auth"
+	chatUC "github.com/khoahotran/personal-os/internal/application/usecase/chat"
 	hobbyUC "github.com/khoahotran/personal-os/internal/application/usecase/hobby"
 	mediaUC "github.com/khoahotran/personal-os/internal/application/usecase/media"
 	postUC "github.com/khoahotran/personal-os/internal/application/usecase/post"
@@ -70,6 +73,14 @@ func main() {
 	if err != nil {
 		appLogger.Fatal("FATAL: Failed to initialize uploader", err)
 	}
+	embedder, err := embedding.NewOllamaAdapter(cfg, appLogger)
+	if err != nil {
+		appLogger.Fatal("FATAL: Failed to initialize Ollama adapter", err)
+	}
+	llmService, err := llm.NewOllamaLLMAdapter(cfg, appLogger)
+	if err != nil {
+		appLogger.Fatal("FATAL: Failed to initialize Ollama LLM adapter", err)
+	}
 
 	// Use Cases
 	loginUseCase := authUC.NewLoginUseCase(userRepo, jwtSvc, appLogger)
@@ -97,6 +108,12 @@ func main() {
 	deleteMediaUseCase := mediaUC.NewDeleteMediaUseCase(mediaRepo, uploader, appLogger)
 
 	hobbyUseCase := hobbyUC.NewHobbyUseCase(hobbyRepo, appLogger)
+	chatUseCase := chatUC.NewChatUseCase(
+		embedder,
+		llmService,
+		postRepo,
+		appLogger,
+	)
 
 	// HTTP Handlers
 	authHandler := httpAdapter.NewAuthHandler(loginUseCase, appLogger)
@@ -123,6 +140,11 @@ func main() {
 		listPublicMediaUseCase,
 		updateMediaUseCase,
 		deleteMediaUseCase,
+		appLogger,
+	)
+
+	chatHandler := httpAdapter.NewChatHandler(
+		chatUseCase,
 		appLogger,
 	)
 
@@ -159,6 +181,7 @@ func main() {
 						"owner_id": userID,
 					})
 				})
+				adminPrivate.POST("/chat", chatHandler.Chat)
 
 				adminPrivate.GET("/profile", profileHandler.GetProfile)
 				adminPrivate.PUT("/profile", profileHandler.UpdateProfile)

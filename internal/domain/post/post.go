@@ -92,4 +92,5 @@ type Repository interface {
 	FindPublicBySlug(ctx context.Context, slug string) (*Post, error)
 	ListByOwner(ctx context.Context, ownerID uuid.UUID, limit, offset int) ([]*Post, error)
 	ListPublic(ctx context.Context, limit, offset int) ([]*Post, error)
+	SearchByEmbedding(ctx context.Context, embedding pgvector.Vector, ownerID uuid.UUID, limit int) ([]*Post, error)
 }

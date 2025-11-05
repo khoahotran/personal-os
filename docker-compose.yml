@@ -64,6 +64,7 @@ services:
       - "11434:11434"
     volumes:
       - ollama_data:/root/.ollama
+    command: [ "serve" ]
     healthcheck:
       test: [ "CMD-SHELL", "ollama list || exit 1" ]
       interval: 30s

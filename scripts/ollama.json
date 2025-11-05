@@ -1,0 +1,6 @@
+{
+    "models": {
+        "nomic-embed-text": "docker exec -it personal-os-ollama ollama pull nomic-embed-text",
+        "phi3-mini": "docker exec -it personal-os-ollama ollama pull phi3:mini"
+    }
+}

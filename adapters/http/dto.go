@@ -304,3 +304,13 @@ func ToHobbyItemDTO(hi *hobby.HobbyItem) HobbyItemDTO {
 		UpdatedAt: hi.UpdatedAt,
 	}
 }
+
+type ChatRequest struct {
+	Query string `json:"query" binding:"required"`
+	Limit int    `json:"limit"`
+}
+
+type ChatResponse struct {
+	Response string           `json:"response"`
+	Sources  []PostSummaryDTO `json:"sources"`
+}

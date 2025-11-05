@@ -242,3 +242,28 @@ func (r *postgresPostRepo) ListPublic(ctx context.Context, limit, offset int) ([
 	}
 	return scanPosts(rows, r.logger)
 }
+
+func (r *postgresPostRepo) SearchByEmbedding(ctx context.Context, embedding pgvector.Vector, ownerID uuid.UUID, limit int) ([]*post.Post, error) {
+	query := `
+		SELECT 
+			id, owner_id, slug, title, content_markdown, status, 
+			og_image_url, thumbnail_url, version_history, metadata, embedding, 
+			published_at, created_at, updated_at
+		FROM posts
+		WHERE owner_id = $1 AND status != $2
+		ORDER BY embedding <=> $3
+		LIMIT $4
+	`
+
+	rows, err := r.db.Query(ctx, query,
+		ownerID,
+		post.StatusPending,
+		embedding,
+		limit,
+	)
+	if err != nil {
+		return nil, apperror.NewInternal("failed to query by embedding", err)
+	}
+
+	return scanPosts(rows, r.logger)
+}

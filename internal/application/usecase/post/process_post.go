@@ -46,7 +46,6 @@ func (uc *ProcessPostEventUseCase) Execute(ctx context.Context, payload event.Po
 	}
 
 	originalPublicID, ok := p.Metadata["original_public_id"].(string)
-	l.Info("[DEBUG]: ", zap.String("original_public_id", originalPublicID))
 	if !ok || originalPublicID == "" {
 		return apperror.NewInvalidInput("original_public_id not found in metadata", nil)
 	}
@@ -87,9 +86,6 @@ func (uc *ProcessPostEventUseCase) Execute(ctx context.Context, payload event.Po
 		requestedStatusStr = string(post.StatusDraft)
 	}
 	p.Status = post.PostStatus(requestedStatusStr)
-	l.Info("[DEBUG]: ", zap.String("ogImageURL", ogImageURL))
-	l.Info("[DEBUG]: ", zap.String("thumbURL", thumbURL))
-
 	p.MarkAsReady(ogImageURL, thumbURL)
 
 	if err := uc.postRepo.Update(ctx, p); err != nil {
