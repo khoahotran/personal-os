@@ -25,6 +25,7 @@ import (
 	"github.com/khoahotran/personal-os/internal/config"
 	"github.com/khoahotran/personal-os/pkg/auth"
 	"github.com/khoahotran/personal-os/pkg/logger"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func main() {
@@ -244,6 +245,8 @@ func main() {
 			public.GET("/hobbies", hobbyHandler.ListPublicHobbyItems) // ?category=...
 
 			public.GET("/search", searchHandler.SearchPublic)
+
+			public.GET("/metrics", gin.WrapH(promhttp.Handler()))
 		}
 	}
 	log.SetFlags(log.LstdFlags | log.Lshortfile)

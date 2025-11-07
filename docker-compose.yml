@@ -1,4 +1,42 @@
 services:
+  # API Server
+  api-server:
+      container_name: personal-os-api
+      build:
+        context: .
+        dockerfile: Dockerfile.dev
+      ports:
+        - "8080:8080"
+      volumes:
+        - .:/app
+      command: ["air", "-c", ".air.toml"]
+      depends_on:
+        postgres:
+          condition: service_healthy
+        redis:
+          condition: service_healthy
+        kafka:
+          condition: service_healthy
+      env_file: .env 
+
+  # Worker
+  worker:
+    container_name: personal-os-worker
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    volumes:
+      - .:/app
+    command: ["go", "run", "./cmd/worker/main.go"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+    env_file: .env
+      
   # PostgreSQL (Database)
   postgres:
     image: pgvector/pgvector:pg16
@@ -72,7 +110,43 @@ services:
       retries: 5
       start_period: 60s
 
+  prometheus:
+    image: prom/prometheus:v2.53.1
+    container_name: personal-os-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+    healthcheck:
+      test: [ "CMD-SHELL", "wget -q --spider http://localhost:9090/-/healthy || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  grafana:
+    image: grafana/grafana:10.4.2
+    container_name: personal-os-grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin123
+    depends_on:
+      - prometheus
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3000 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
 volumes:
   postgres_data:
   kafka_data:
   ollama_data:
+  grafana_data:
