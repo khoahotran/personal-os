@@ -8,6 +8,7 @@ import (
 	"github.com/khoahotran/personal-os/internal/domain/post"
 	"github.com/khoahotran/personal-os/internal/domain/profile"
 	"github.com/khoahotran/personal-os/internal/domain/project"
+	"github.com/khoahotran/personal-os/internal/domain/search"
 	"github.com/khoahotran/personal-os/internal/domain/tag"
 )
 
@@ -313,4 +314,28 @@ type ChatRequest struct {
 type ChatResponse struct {
 	Response string           `json:"response"`
 	Sources  []PostSummaryDTO `json:"sources"`
+}
+
+type SearchResultDTO struct {
+	ID           string    `json:"id"`
+	ResourceType string    `json:"resource_type"`
+	Title        string    `json:"title"`
+	Slug         string    `json:"slug"`
+	Snippet      string    `json:"snippet"`
+	Rank         float32   `json:"rank"`
+	IsPublic     bool      `json:"is_public"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+func ToSearchResultDTO(s search.SearchResult) SearchResultDTO {
+	return SearchResultDTO{
+		ID:           s.ID.String(),
+		ResourceType: s.ResourceType,
+		Title:        s.Title,
+		Slug:         s.Slug,
+		Snippet:      s.Snippet,
+		Rank:         s.Rank,
+		IsPublic:     s.IsPublic,
+		UpdatedAt:    s.UpdatedAt,
+	}
 }

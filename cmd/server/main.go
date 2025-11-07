@@ -21,6 +21,7 @@ import (
 	postUC "github.com/khoahotran/personal-os/internal/application/usecase/post"
 	profileUC "github.com/khoahotran/personal-os/internal/application/usecase/profile"
 	projectUC "github.com/khoahotran/personal-os/internal/application/usecase/project"
+	searchUC "github.com/khoahotran/personal-os/internal/application/usecase/search"
 	"github.com/khoahotran/personal-os/internal/config"
 	"github.com/khoahotran/personal-os/pkg/auth"
 	"github.com/khoahotran/personal-os/pkg/logger"
@@ -66,6 +67,7 @@ func main() {
 	projectRepo := persistence.NewPostgresProjectRepo(dbPool, appLogger)
 	mediaRepo := persistence.NewPostgresMediaRepo(dbPool, appLogger)
 	hobbyRepo := persistence.NewPostgresHobbyRepo(dbPool, appLogger)
+	searchRepo := persistence.NewPostgresSearchRepo(dbPool, appLogger)
 
 	// Services
 	jwtSvc := auth.NewJWTService(cfg.Auth.JWTSecret, cfg.Auth.TokenLifespan)
@@ -114,6 +116,7 @@ func main() {
 		postRepo,
 		appLogger,
 	)
+	searchUseCase := searchUC.NewSearchUseCase(searchRepo, appLogger)
 
 	// HTTP Handlers
 	authHandler := httpAdapter.NewAuthHandler(loginUseCase, appLogger)
@@ -147,6 +150,8 @@ func main() {
 		chatUseCase,
 		appLogger,
 	)
+
+	searchHandler := httpAdapter.NewSearchHandler(searchUseCase, appLogger)
 
 	// Middleware
 	authMiddleware := httpAdapter.AuthMiddleware(jwtSvc, appLogger)
@@ -219,6 +224,8 @@ func main() {
 					hobbies.PUT("/:id", hobbyHandler.UpdateHobbyItem)
 					hobbies.DELETE("/:id", hobbyHandler.DeleteHobbyItem)
 				}
+
+				adminPrivate.GET("/search", searchHandler.SearchPrivate)
 			}
 		}
 
@@ -235,6 +242,8 @@ func main() {
 			public.GET("/media", mediaHandler.ListPublicMedia)
 
 			public.GET("/hobbies", hobbyHandler.ListPublicHobbyItems) // ?category=...
+
+			public.GET("/search", searchHandler.SearchPublic)
 		}
 	}
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
