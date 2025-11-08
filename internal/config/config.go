@@ -36,6 +36,9 @@ type Config struct {
 	Ollama struct {
 		Host string `mapstructure:"host"`
 	} `mapstructure:"ollama"`
+	Jaeger struct {
+		OTLPEndpoint string `mapstructure:"otlp_endpoint"`
+	} `mapstructure:"jaeger"`
 }
 
 func LoadConfig(paths ...string) (cfg Config, err error) {
@@ -75,6 +78,7 @@ func LoadConfig(paths ...string) (cfg Config, err error) {
 	viper.BindEnv("cloudinary.api_secret", "CLOUDINARY_API_SECRET")
 
 	viper.BindEnv("ollama.host", "OLLAMA_HOST")
+	viper.BindEnv("jaeger.otlp_endpoint", "JAEGER_OTLP_GRPC_ENDPOINT")
 
 	err = viper.Unmarshal(&cfg)
 	return

@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -25,7 +27,9 @@ import (
 	"github.com/khoahotran/personal-os/internal/config"
 	"github.com/khoahotran/personal-os/pkg/auth"
 	"github.com/khoahotran/personal-os/pkg/logger"
+	"github.com/khoahotran/personal-os/pkg/tracing"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 )
 
 func main() {
@@ -59,6 +63,18 @@ func main() {
 		appLogger.Fatal("FATAL: cannot init Kafka", err)
 	}
 	defer kafkaClient.Close()
+
+	tracerProvider, err := tracing.NewTracerProvider(cfg, appLogger, "personal-os-api")
+	if err != nil {
+		appLogger.Fatal("FATAL: Failed to initialize Tracer", err)
+	}
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := tracerProvider.Shutdown(ctx); err != nil {
+			appLogger.Error("Failed to shutdown Tracer", err)
+		}
+	}()
 
 	// Repositories
 	userRepo := persistence.NewPostgresUserRepo(dbPool, appLogger)
@@ -160,7 +176,7 @@ func main() {
 	// Setup Gin router
 	router := gin.Default()
 	router.Use(httpAdapter.ErrorMiddleware(appLogger))
-
+	router.Use(otelgin.Middleware("personal-os-api"))
 	api := router.Group("/api")
 	{
 
