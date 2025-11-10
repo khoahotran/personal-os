@@ -1,5 +1,6 @@
 FROM golang:1.25-alpine
 
+RUN apk add --no-cache git postgresql-client
 RUN apk add --no-cache git bash ca-certificates
 RUN go install github.com/air-verse/air@latest
 

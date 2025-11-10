@@ -11,17 +11,18 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/segmentio/kafka-go"
-	"go.uber.org/zap"
-
 	"github.com/khoahotran/personal-os/adapters/embedding"
 	"github.com/khoahotran/personal-os/adapters/event"
 	"github.com/khoahotran/personal-os/adapters/media_storage"
 	"github.com/khoahotran/personal-os/adapters/persistence"
+	"github.com/khoahotran/personal-os/internal/application/usecase/backup"
 	mediaUC "github.com/khoahotran/personal-os/internal/application/usecase/media"
 	postUC "github.com/khoahotran/personal-os/internal/application/usecase/post"
 	"github.com/khoahotran/personal-os/internal/config"
 	"github.com/khoahotran/personal-os/pkg/logger"
+	"github.com/robfig/cron/v3"
+	"github.com/segmentio/kafka-go"
+	"go.uber.org/zap"
 )
 
 func main() {
@@ -63,6 +64,7 @@ func main() {
 	// Worker Use Case
 	processPostEventUC := postUC.NewProcessPostEventUseCase(postRepo, uploader, embedder, appLogger)
 	processMediaEventUC := mediaUC.NewProcessMediaUseCase(mediaRepo, uploader, appLogger)
+	backupUseCase := backup.NewBackupUseCase(cfg, uploader, appLogger)
 
 	// Kafka Consumer
 	postConsumer := kafka.NewReader(kafka.ReaderConfig{
@@ -82,6 +84,18 @@ func main() {
 		MaxBytes: 10e6,
 	})
 	defer mediaConsumer.Close()
+
+	c := cron.New()
+	// 2AM every day
+	_, err = c.AddFunc("0 2 * * *", func() {
+		appLogger.Info("Cron job triggered: Running database backup...")
+		backupUseCase.Execute(context.Background())
+	})
+	if err != nil {
+		appLogger.Fatal("Failed to add cron job", err)
+	}
+	c.Start()
+	appLogger.Info("Cron job scheduler started. Backup scheduled for 2 AM.")
 
 	// Context and run
 
