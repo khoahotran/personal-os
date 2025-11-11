@@ -134,6 +134,7 @@ func main() {
 		appLogger,
 	)
 	searchUseCase := searchUC.NewSearchUseCase(searchRepo, appLogger)
+	rssUseCase := postUC.NewRSSUseCase(postRepo, appLogger)
 
 	// HTTP Handlers
 	authHandler := httpAdapter.NewAuthHandler(loginUseCase, appLogger)
@@ -169,6 +170,8 @@ func main() {
 	)
 
 	searchHandler := httpAdapter.NewSearchHandler(searchUseCase, appLogger)
+
+	rssHandler := httpAdapter.NewRSSHandler(rssUseCase, appLogger)
 
 	// Middleware
 	authMiddleware := httpAdapter.AuthMiddleware(jwtSvc, appLogger)
@@ -263,6 +266,8 @@ func main() {
 			public.GET("/search", searchHandler.SearchPublic)
 
 			public.GET("/metrics", gin.WrapH(promhttp.Handler()))
+
+			public.GET("/rss.xml", rssHandler.GenerateRSS)
 		}
 	}
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
